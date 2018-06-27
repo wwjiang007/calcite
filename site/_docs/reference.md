@@ -1267,8 +1267,18 @@ Not implemented:
 |:--------------- |:-----------
 | ELEMENT(value)  | Returns the sole element of a array or multiset; null if the collection is empty; throws if it has more than one element.
 | CARDINALITY(value) | Returns the number of elements in an array or multiset.
+| value MEMBER OF multiset | Returns whether the *value* is a member of *multiset*.
+| multiset IS A SET | Whether *multiset* is a set (has no duplicates).
+| multiset IS NOT A SET | Whether *multiset* is not a set (has duplicates).
+| multiset IS EMPTY | Whether *multiset* contains zero elements.
+| multiset IS NOT EMPTY | Whether *multiset* contains one or more elements.
+| multiset SUBMULTISET OF multiset2 | Whether *multiset* is a submultiset of *multiset2*.
+| multiset NOT SUBMULTISET OF multiset2 | Whether *multiset* is not a submultiset of *multiset2*.
+| multiset MULTISET UNION [ ALL &#124; DISTINCT ] multiset2 | Returns the union *multiset* and *multiset2*, eliminating duplicates if DISTINCT is specified (ALL is the default).
+| multiset MULTISET INTERSECT [ ALL &#124; DISTINCT ] multiset2 | Returns the intersection of *multiset* and *multiset2*, eliminating duplicates if DISTINCT is specified (ALL is the default).
+| multiset MULTISET EXCEPT [ ALL &#124; DISTINCT ] multiset2 | Returns the difference of *multiset* and *multiset2*, eliminating duplicates if DISTINCT is specified (ALL is the default).
 
-See also: UNNEST relational operator converts a collection to a relation.
+See also: the UNNEST relational operator converts a collection to a relation.
 
 ### Period predicates
 
@@ -1483,6 +1493,7 @@ passed to the aggregate function.
 | COLLECT( [ ALL &#124; DISTINCT ] value)       | Returns a multiset of the values
 | COUNT( [ ALL &#124; DISTINCT ] value [, value ]*) | Returns the number of input rows for which *value* is not null (wholly not null if *value* is composite)
 | COUNT(*)                           | Returns the number of input rows
+| FUSION( multiset )                 | Returns the multiset union of *multiset* across all input values
 | APPROX_COUNT_DISTINCT(value [, value ]*)      | Returns the approximate number of distinct values of *value*; the database is allowed to use an approximation but is not required to
 | AVG( [ ALL &#124; DISTINCT ] numeric)         | Returns the average (arithmetic mean) of *numeric* across all input values
 | SUM( [ ALL &#124; DISTINCT ] numeric)         | Returns the sum of *numeric* across all input values
@@ -2087,11 +2098,13 @@ ddlStatement:
   |   createTableStatement
   |   createViewStatement
   |   createMaterializedViewStatement
+  |   createTypeStatement
   |   dropSchemaStatement
   |   dropForeignSchemaStatement
   |   dropTableStatement
   |   dropViewStatement
   |   dropMaterializedViewStatement
+  |   dropTypeStatement
 
 createSchemaStatement:
       CREATE [ OR REPLACE ] SCHEMA [ IF NOT EXISTS ] name
@@ -2111,6 +2124,19 @@ createTableStatement:
       CREATE TABLE [ IF NOT EXISTS ] name
       [ '(' tableElement [, tableElement ]* ')' ]
       [ AS query ]
+
+createTypeStatement:
+      CREATE [ OR REPLACE ] TYPE name AS
+      {
+          baseType
+      |   '(' attributeDef [, attributeDef ]* ')'
+      }
+
+attributeDef:
+      attributeName type
+      [ COLLATE collation ]
+      [ NULL | NOT NULL ]
+      [ DEFAULT expression ]
 
 tableElement:
       columnName type [ columnGenerator ] [ columnConstraint ]
@@ -2145,19 +2171,22 @@ createMaterializedViewStatement:
       AS query
 
 dropSchemaStatement:
-      DROP SCHEMA name [ IF EXISTS ]
+      DROP SCHEMA [ IF EXISTS ] name
 
 dropForeignSchemaStatement:
-      DROP FOREIGN SCHEMA name [ IF EXISTS ]
+      DROP FOREIGN SCHEMA [ IF EXISTS ] name
 
 dropTableStatement:
-      DROP TABLE name [ IF EXISTS ]
+      DROP TABLE [ IF EXISTS ] name
 
 dropViewStatement:
-      DROP VIEW name [ IF EXISTS ]
+      DROP VIEW [ IF EXISTS ] name
 
 dropMaterializedViewStatement:
-      DROP MATERIALIZED VIEW name [ IF EXISTS ]
+      DROP MATERIALIZED VIEW [ IF EXISTS ] name
+
+dropTypeStatement:
+      DROP TYPE [ IF EXISTS ] name
 {% endhighlight %}
 
 In *createTableStatement*, if you specify *AS query*, you may omit the list of

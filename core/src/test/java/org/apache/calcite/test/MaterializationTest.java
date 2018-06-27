@@ -122,7 +122,7 @@ public class MaterializationTest {
   private final RexBuilder rexBuilder = new RexBuilder(typeFactory);
   private final RexSimplify simplify =
       new RexSimplify(rexBuilder, RelOptPredicateList.EMPTY, false,
-          RexUtil.EXECUTOR);
+          RexUtil.EXECUTOR).withParanoid(true);
 
   @Test public void testScan() {
     CalciteAssert.that()
@@ -1808,6 +1808,15 @@ public class MaterializationTest {
             "EnumerableUnion(all=[true])",
             "EnumerableTableScan(table=[[hr, m0]])",
             "expr#5=[10], expr#6=[>($t0, $t5)], expr#7=[30], expr#8=[>=($t7, $t0)]"));
+  }
+
+  @Test public void testJoinMaterialization11() {
+    checkNoMaterialize(
+        "select \"empid\" from \"emps\"\n"
+            + "join \"depts\" using (\"deptno\")",
+        "select \"empid\" from \"emps\"\n"
+            + "where \"deptno\" in (select \"deptno\" from \"depts\")",
+        HR_FKUK_MODEL);
   }
 
   @Test public void testJoinMaterializationUKFK1() {

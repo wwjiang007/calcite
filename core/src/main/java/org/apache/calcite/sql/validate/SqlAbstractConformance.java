@@ -71,6 +71,10 @@ public abstract class SqlAbstractConformance implements SqlConformance {
     return SqlConformanceEnum.DEFAULT.allowNiladicParentheses();
   }
 
+  public boolean allowExplicitRowValueConstructor() {
+    return SqlConformanceEnum.DEFAULT.allowExplicitRowValueConstructor();
+  }
+
   public boolean allowExtend() {
     return SqlConformanceEnum.DEFAULT.allowExtend();
   }
@@ -85,6 +89,10 @@ public abstract class SqlAbstractConformance implements SqlConformance {
 
   public boolean allowGeometry() {
     return SqlConformanceEnum.DEFAULT.allowGeometry();
+  }
+
+  public boolean shouldConvertRaggedUnionTypesToVarying() {
+    return SqlConformanceEnum.DEFAULT.shouldConvertRaggedUnionTypesToVarying();
   }
 }
 

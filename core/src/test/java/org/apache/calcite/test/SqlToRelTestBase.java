@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.test;
 
+import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.linq4j.tree.Expression;
 import org.apache.calcite.plan.Context;
 import org.apache.calcite.plan.Contexts;
@@ -98,7 +99,8 @@ public abstract class SqlToRelTestBase {
 
   protected Tester createTester() {
     return new TesterImpl(getDiffRepos(), false, false, true, false,
-        null, null);
+        null, null, SqlToRelConverter.Config.DEFAULT,
+        SqlConformanceEnum.DEFAULT, Contexts.empty());
   }
 
   /**
@@ -572,6 +574,10 @@ public abstract class SqlToRelTestBase {
       final SqlValidator validator =
           createValidator(
               catalogReader, typeFactory);
+      final CalciteConnectionConfig calciteConfig = context.unwrap(CalciteConnectionConfig.class);
+      if (calciteConfig != null) {
+        validator.setDefaultNullCollation(calciteConfig.defaultNullCollation());
+      }
       if (config == SqlToRelConverter.Config.DEFAULT) {
         localConfig = SqlToRelConverter.configBuilder()
             .withTrimUnusedFields(true).withExpand(enableExpand).build();
@@ -636,7 +642,9 @@ public abstract class SqlToRelTestBase {
     }
 
     public SqlNode parseQuery(String sql) throws Exception {
-      SqlParser parser = SqlParser.create(sql);
+      final SqlParser.Config config =
+          SqlParser.configBuilder().setConformance(getConformance()).build();
+      SqlParser parser = SqlParser.create(sql, config);
       return parser.parseQuery();
     }
 

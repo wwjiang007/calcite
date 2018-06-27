@@ -419,6 +419,30 @@ public class JdbcAdapterTest {
   }
 
   /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-2206">[CALCITE-2206]
+   * JDBC adapter incorrectly pushes windowed aggregates down to HSQLDB</a>. */
+  @Test public void testOverNonSupportedDialect() {
+    final String sql = "select \"store_id\", \"account_id\", \"exp_date\",\n"
+        + " \"time_id\", \"category_id\", \"currency_id\", \"amount\",\n"
+        + " last_value(\"time_id\") over () as \"last_version\"\n"
+        + "from \"expense_fact\"";
+    final String explain = "PLAN="
+        + "EnumerableWindow(window#0=[window(partition {} "
+        + "order by [] range between UNBOUNDED PRECEDING and "
+        + "UNBOUNDED FOLLOWING aggs [LAST_VALUE($3)])])\n"
+        + "  JdbcToEnumerableConverter\n"
+        + "    JdbcTableScan(table=[[foodmart, expense_fact]])\n";
+    CalciteAssert
+        .model(JdbcTest.FOODMART_MODEL)
+        .enable(CalciteAssert.DB == DatabaseInstance.HSQLDB)
+        .query(sql)
+        .explainContains(explain)
+        .runs()
+        .planHasSql("SELECT *\n"
+            + "FROM \"foodmart\".\"expense_fact\"");
+  }
+
+  /** Test case for
    * <a href="https://issues.apache.org/jira/browse/CALCITE-1506">[CALCITE-1506]
    * Push OVER Clause to underlying SQL via JDBC adapter</a>.
    *
@@ -443,6 +467,23 @@ public class JdbcAdapterTest {
             + " \"time_id\", \"category_id\", \"currency_id\", \"amount\","
             + " LAST_VALUE(\"time_id\") OVER (RANGE BETWEEN UNBOUNDED"
             + " PRECEDING AND UNBOUNDED FOLLOWING) AS \"last_version\"\n"
+            + "FROM \"foodmart\".\"expense_fact\"");
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-2305">[CALCITE-2305]
+   * JDBC adapter generates invalid casts on PostgreSQL, because PostgreSQL does
+   * not have TINYINT and DOUBLE types</a>. */
+  @Test public void testCast() {
+    CalciteAssert
+        .model(JdbcTest.FOODMART_MODEL)
+        .enable(CalciteAssert.DB == CalciteAssert.DatabaseInstance.POSTGRESQL)
+        .query("select cast(\"store_id\" as TINYINT),"
+            + "cast(\"store_id\" as DOUBLE)"
+            + " from \"expense_fact\"")
+        .runs()
+        .planHasSql("SELECT CAST(\"store_id\" AS SMALLINT),"
+            + " CAST(\"store_id\" AS DOUBLE PRECISION)\n"
             + "FROM \"foodmart\".\"expense_fact\"");
   }
 

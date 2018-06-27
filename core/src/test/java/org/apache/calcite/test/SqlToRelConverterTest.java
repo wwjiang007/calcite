@@ -16,6 +16,10 @@
  */
 package org.apache.calcite.test;
 
+import org.apache.calcite.config.CalciteConnectionConfigImpl;
+import org.apache.calcite.config.CalciteConnectionProperty;
+import org.apache.calcite.config.NullCollation;
+import org.apache.calcite.plan.Contexts;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.prepare.Prepare;
 import org.apache.calcite.rel.RelNode;
@@ -45,6 +49,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Properties;
 import java.util.Set;
 
 import static org.hamcrest.CoreMatchers.notNullValue;
@@ -67,7 +72,7 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
   /** Sets the SQL statement for a test. */
   public final Sql sql(String sql) {
     return new Sql(sql, true, true, tester, false,
-        SqlToRelConverter.Config.DEFAULT, SqlConformanceEnum.DEFAULT);
+        SqlToRelConverter.Config.DEFAULT, tester.getConformance());
   }
 
   protected final void check(
@@ -1100,6 +1105,27 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
   @Test public void testUnnestSubQuery() {
     final String sql = "select*from unnest(multiset(select*from dept))";
     sql(sql).ok();
+  }
+
+  @Test public void testUnnestArrayAggPlan() {
+    final String sql = "select d.deptno, e2.empno_avg\n"
+        + "from dept_nested as d outer apply\n"
+        + " (select avg(e.empno) as empno_avg from UNNEST(d.employees) as e) e2";
+    sql(sql).conformance(SqlConformanceEnum.LENIENT).ok();
+  }
+
+  @Test public void testUnnestArrayPlan() {
+    final String sql = "select d.deptno, e2.empno\n"
+        + "from dept_nested as d,\n"
+        + " UNNEST(d.employees) e2";
+    sql(sql).with(getExtendedTester()).ok();
+  }
+
+  @Test public void testUnnestArrayPlanAs() {
+    final String sql = "select d.deptno, e2.empno\n"
+        + "from dept_nested as d,\n"
+        + " UNNEST(d.employees) as e2(empno, y, z)";
+    sql(sql).with(getExtendedTester()).ok();
   }
 
   @Test public void testArrayOfRecord() {
@@ -2460,6 +2486,22 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
     sql(sql).with(getTesterWithDynamicTable()).ok();
   }
 
+  @Test public void testDynamicNestedColumn() {
+    final String sql = "select t3.fake_q1['fake_col2'] as fake2\n"
+        + "from (\n"
+        + "  select t2.fake_col as fake_q1\n"
+        + "  from SALES.CUSTOMER as t2) as t3";
+    sql(sql).with(getTesterWithDynamicTable()).ok();
+  }
+
+  @Test public void testDynamicSchemaUnnest() {
+    final String sql3 = "select t1.c_nationkey, t3.fake_col3\n"
+        + "from SALES.CUSTOMER as t1,\n"
+        + "lateral (select t2.fake_col2 as fake_col3\n"
+        + "         from unnest(t1.fake_col) as t2) as t3";
+    sql(sql3).with(getTesterWithDynamicTable()).ok();
+  }
+
   /**
    * Test case for Dynamic Table / Dynamic Star support
    * <a href="https://issues.apache.org/jira/browse/CALCITE-1150">[CALCITE-1150]</a>
@@ -2597,6 +2639,7 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
                 regionTable.addColumn("R_NAME", varcharType);
                 regionTable.addColumn("R_COMMENT", varcharType);
                 registerTable(regionTable);
+
                 return this;
               }
               // CHECKSTYLE: IGNORE 1
@@ -2773,6 +2816,27 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
         + "            END\n"
         + ") AS T";
     sql(sql).ok();
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-2323">[CALCITE-2323]
+   * Validator should allow alternative nullCollations for ORDER BY in
+   * OVER</a>. */
+  @Test public void testUserDefinedOrderByOver() {
+    String sql = "select deptno,\n"
+        + "  rank() over(partition by empno order by deptno)\n"
+        + "from emp\n"
+        + "order by row_number() over(partition by empno order by deptno)";
+    Properties properties = new Properties();
+    properties.setProperty(
+        CalciteConnectionProperty.DEFAULT_NULL_COLLATION.camelName(),
+        NullCollation.LOW.name());
+    CalciteConnectionConfigImpl connectionConfig =
+        new CalciteConnectionConfigImpl(properties);
+    TesterImpl tester = new TesterImpl(getDiffRepos(), false, false, true, false,
+        null, null, SqlToRelConverter.Config.DEFAULT,
+        SqlConformanceEnum.DEFAULT, Contexts.of(connectionConfig));
+    sql(sql).with(tester).ok();
   }
 
   /**

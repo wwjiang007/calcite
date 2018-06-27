@@ -19,13 +19,14 @@ package org.apache.calcite.adapter.mongodb;
 import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.impl.AbstractSchema;
 
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientOptions;
 import com.mongodb.MongoCredential;
 import com.mongodb.ServerAddress;
-
 import com.mongodb.client.MongoDatabase;
 
 import java.util.List;
@@ -42,9 +43,11 @@ public class MongoSchema extends AbstractSchema {
    * Creates a MongoDB schema.
    *
    * @param host Mongo host, e.g. "localhost"
+   * @param credentialsList Optional credentials (empty list for none)
+   * @param options Mongo connection options
    * @param database Mongo database name, e.g. "foodmart"
    */
-  public MongoSchema(String host, String database,
+  MongoSchema(String host, String database,
       List<MongoCredential> credentialsList, MongoClientOptions options) {
     super();
     try {
@@ -54,6 +57,17 @@ public class MongoSchema extends AbstractSchema {
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
+  }
+
+  /**
+   * Allows tests to inject their instance of the database.
+   *
+   * @param mongoDb existing mongo database instance
+   */
+  @VisibleForTesting
+  MongoSchema(MongoDatabase mongoDb) {
+    super();
+    this.mongoDb = Preconditions.checkNotNull(mongoDb, "mongoDb");
   }
 
   @Override protected Map<String, Table> getTableMap() {

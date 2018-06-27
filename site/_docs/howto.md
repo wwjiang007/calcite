@@ -34,7 +34,7 @@ adapters.
 Prerequisites are maven (3.5.2 or later)
 and Java (JDK 8, 9 or 10) on your path.
 
-Unpack the source distribution `.tar.gz` or `.zip` file,
+Unpack the source distribution `.tar.gz` file,
 `cd` to the root directory of the unpacked source,
 then build using maven:
 
@@ -450,6 +450,15 @@ $ ./src/main/scripts/generate-protobuf.sh
 The following sections are of interest to Calcite committers and in
 particular release managers.
 
+## Merging pull requests (for Calcite committers)
+
+Ask the contributor to squash the PR into a single commit with a message starting with [CALCITE-XXX] where XXX is the associated JIRA issue number.
+You can take this step yourself if needed.
+The contributor's name should also be added in parentheses at the end of the first line of the commit message.
+Finally, after a couple new lines make sure the message contains "Close apache/calcite#YYY" where YYY is the GitHub issue number.
+This is important as it is the only way we have to close issues on GitHub without asking the originator to do so manually.
+When the PR has been merged and pushed, be sure to mark the JIRA issue as resolved (do not use closed as that is reserved for release time).
+
 ## Set up PGP signing keys (for Calcite committers)
 
 Follow instructions [here](https://www.apache.org/dev/release-signing) to
@@ -582,11 +591,8 @@ The version will be automatically changed when performing the release for real.
   * apache-calcite-X.Y.Z-src.tar.gz
   * apache-calcite-X.Y.Z-src.tar.gz.asc
   * apache-calcite-X.Y.Z-src.tar.gz.sha256
-  * apache-calcite-X.Y.Z-src.zip
-  * apache-calcite-X.Y.Z-src.zip.asc
-  * apache-calcite-X.Y.Z-src.zip.sha256
 * Note that the file names start `apache-calcite-`.
-* In the two source distros `.tar.gz` and `.zip` (currently there is
+* In the source distro `.tar.gz` (currently there is
   no binary distro), check that all files belong to a directory called
   `apache-calcite-X.Y.Z-src`.
 * That directory must contain files `NOTICE`, `LICENSE`,
@@ -679,7 +685,7 @@ curl -O https://dist.apache.org/repos/dist/release/calcite/KEYS
 # (Assumes your O/S has a 'shasum' command.)
 function checkHash() {
   cd "$1"
-  for i in *.{zip,pom,gz}; do
+  for i in *.{pom,gz}; do
     if [ ! -f $i ]; then
       continue
     fi
@@ -724,7 +730,6 @@ https://dist.apache.org/repos/dist/dev/calcite/apache-calcite-X.Y.Z-rcN/
 
 The hashes of the artifacts are as follows:
 src.tar.gz.sha256 XXXX
-src.zip.sha256 XXXX
 
 A staged Maven repository is available for review at:
 https://repository.apache.org/content/repositories/orgapachecalcite-NNNN

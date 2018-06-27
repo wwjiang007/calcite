@@ -210,6 +210,16 @@ public enum SqlConformanceEnum implements SqlConformance {
     }
   }
 
+  public boolean allowExplicitRowValueConstructor() {
+    switch (this) {
+    case DEFAULT:
+    case LENIENT:
+      return true;
+    default:
+      return false;
+    }
+  }
+
   public boolean allowExtend() {
     switch (this) {
     case LENIENT:
@@ -233,6 +243,20 @@ public enum SqlConformanceEnum implements SqlConformance {
     switch (this) {
     case LENIENT:
     case MYSQL_5:
+    case SQL_SERVER_2008:
+      return true;
+    default:
+      return false;
+    }
+  }
+
+  public boolean shouldConvertRaggedUnionTypesToVarying() {
+    switch (this) {
+    case PRAGMATIC_99:
+    case PRAGMATIC_2003:
+    case MYSQL_5:
+    case ORACLE_10:
+    case ORACLE_12:
     case SQL_SERVER_2008:
       return true;
     default:

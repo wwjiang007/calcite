@@ -14,28 +14,36 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-{
-  "version": "1.0",
-  "defaultSchema": "mongo",
-  "schemas": [
-    {
-      "type": "custom",
-      "name": "mongo_raw",
-      "factory": "org.apache.calcite.adapter.mongodb.MongoSchemaFactory",
-      "operand": {
-        "host": "localhost",
-        "database": "test"
-      }
-    },
-    {
-      "name": "mongo",
-      "tables": [
-        {
-          "name": "ZIPS",
-          "type": "view",
-          "sql": "select cast(_MAP['city'] AS varchar(20)) AS city,\n cast(_MAP['loc'][0] AS float) AS longitude, cast(_MAP['loc'][1] AS float) AS latitude, cast(_MAP['pop'] AS integer) AS pop, cast(_MAP['state'] AS varchar(2)) AS state, cast(_MAP['_id'] AS varchar(5)) AS id from \"mongo_raw\".\"zips\""
-        }
-      ]
-    }
-  ]
+package org.apache.calcite.model;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Type schema element.
+ *
+ * <p>Occurs within {@link JsonMapSchema#tables}.
+ *
+ * @see JsonRoot Description of schema elements
+ */
+public class JsonType {
+  /** Name of this type.
+   *
+   * <p>Required.
+   */
+  public String name;
+
+  /** Type if this is not a struct.
+   */
+  public String type;
+
+  /** Definition of the attributes of this type.
+   */
+  public final List<JsonTypeAttribute> attributes = new ArrayList<>();
+
+  public void accept(ModelHandler handler) {
+    handler.visit(this);
+  }
 }
+
+// End JsonType.java
