@@ -18,6 +18,7 @@ package org.apache.calcite.test;
 
 import org.apache.calcite.avatica.util.Spaces;
 import org.apache.calcite.util.Pair;
+import org.apache.calcite.util.Sources;
 import org.apache.calcite.util.Util;
 import org.apache.calcite.util.XmlOutput;
 
@@ -39,8 +40,10 @@ import java.io.Writer;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -209,10 +212,7 @@ public class DiffRepository {
         flushDoc();
       }
       this.root = doc.getDocumentElement();
-      if (!root.getNodeName().equals(ROOT_TAG)) {
-        throw new RuntimeException("expected root element of type '" + ROOT_TAG
-            + "', but found '" + root.getNodeName() + "'");
-      }
+      validate(this.root);
     } catch (ParserConfigurationException | SAXException e) {
       throw new RuntimeException("error while creating xml parser", e);
     }
@@ -532,6 +532,28 @@ public class DiffRepository {
     }
   }
 
+  /** Validates the root element. */
+  private static void validate(Element root) {
+    if (!root.getNodeName().equals(ROOT_TAG)) {
+      throw new RuntimeException("expected root element of type '" + ROOT_TAG
+          + "', but found '" + root.getNodeName() + "'");
+    }
+
+    // Make sure that there are no duplicate test cases.
+    final Set<String> testCases = new HashSet<>();
+    final NodeList childNodes = root.getChildNodes();
+    for (int i = 0; i < childNodes.getLength(); i++) {
+      Node child = childNodes.item(i);
+      if (child.getNodeName().equals(TEST_CASE_TAG)) {
+        Element testCase = (Element) child;
+        final String name = testCase.getAttribute(TEST_CASE_NAME_ATTR);
+        if (!testCases.add(name)) {
+          throw new RuntimeException("TestCase '" + name + "' is duplicate");
+        }
+      }
+    }
+  }
+
   /**
    * Returns a given resource from a given test case.
    *
@@ -746,7 +768,9 @@ public class DiffRepository {
     if (diffRepository == null) {
       final URL refFile = findFile(clazz, ".xml");
       final File logFile =
-          new File(refFile.getFile().replace("test-classes", "surefire"));
+          new File(
+              Sources.of(refFile).file().getAbsolutePath()
+                  .replace("test-classes", "surefire"));
       diffRepository =
           new DiffRepository(refFile, logFile, baseRepository, filter);
       MAP_CLASS_TO_REPOSITORY.put(clazz, diffRepository);

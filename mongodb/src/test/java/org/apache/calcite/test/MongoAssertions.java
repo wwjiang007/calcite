@@ -16,17 +16,18 @@
  */
 package org.apache.calcite.test;
 
-import org.apache.calcite.util.Util;
+import org.apache.calcite.config.CalciteSystemProperty;
+import org.apache.calcite.util.TestUtil;
 
-import com.google.common.base.Function;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Ordering;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Consumer;
 
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.junit.Assert.assertThat;
@@ -47,29 +48,26 @@ public class MongoAssertions {
    * @param lines Expected expressions
    * @return validation function
    */
-  public static Function<ResultSet, Void> checkResultUnordered(
+  public static Consumer<ResultSet> checkResultUnordered(
       final String... lines) {
-    return new Function<ResultSet, Void>() {
-      public Void apply(ResultSet resultSet) {
-        try {
-          final List<String> expectedList =
-              Ordering.natural().immutableSortedCopy(Arrays.asList(lines));
+    return resultSet -> {
+      try {
+        final List<String> expectedList =
+            Ordering.natural().immutableSortedCopy(Arrays.asList(lines));
 
-          final List<String> actualList = Lists.newArrayList();
-          CalciteAssert.toStringList(resultSet, actualList);
-          for (int i = 0; i < actualList.size(); i++) {
-            String s = actualList.get(i);
-            actualList.set(i,
-                s.replaceAll("\\.0;", ";").replaceAll("\\.0$", ""));
-          }
-          Collections.sort(actualList);
-
-          assertThat(Ordering.natural().immutableSortedCopy(actualList),
-              equalTo(expectedList));
-          return null;
-        } catch (SQLException e) {
-          throw new RuntimeException(e);
+        final List<String> actualList = new ArrayList<>();
+        CalciteAssert.toStringList(resultSet, actualList);
+        for (int i = 0; i < actualList.size(); i++) {
+          String s = actualList.get(i);
+          actualList.set(i,
+              s.replaceAll("\\.0;", ";").replaceAll("\\.0$", ""));
         }
+        Collections.sort(actualList);
+
+        assertThat(Ordering.natural().immutableSortedCopy(actualList),
+            equalTo(expectedList));
+      } catch (SQLException e) {
+        throw TestUtil.rethrow(e);
       }
     };
   }
@@ -82,8 +80,8 @@ public class MongoAssertions {
    * @return Whether current tests should use an external mongo instance
    */
   public static boolean useMongo() {
-    return Util.getBooleanProperty("calcite.integrationTest")
-            && Util.getBooleanProperty("calcite.test.mongodb", true);
+    return CalciteSystemProperty.INTEGRATION_TEST.value()
+            && CalciteSystemProperty.TEST_MONGODB.value();
   }
 
   /**

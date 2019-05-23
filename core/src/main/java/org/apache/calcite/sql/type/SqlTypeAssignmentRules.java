@@ -16,21 +16,23 @@
  */
 package org.apache.calcite.sql.type;
 
-import com.google.common.base.Preconditions;
+import org.apache.calcite.util.Util;
+
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import javax.annotation.Nonnull;
 
 /**
  * Rules that determine whether a type is assignable from another type.
@@ -371,8 +373,8 @@ public class SqlTypeAssignmentRules {
   public boolean canCastFrom(
       SqlTypeName to,
       SqlTypeName from) {
-    Preconditions.checkNotNull(to);
-    Preconditions.checkNotNull(from);
+    Objects.requireNonNull(to);
+    Objects.requireNonNull(from);
 
     if (to == SqlTypeName.NULL) {
       return false;
@@ -400,13 +402,8 @@ public class SqlTypeAssignmentRules {
     Builder() {
       this.map = new HashMap<>();
       this.sets =
-          CacheBuilder.newBuilder().build(
-              new CacheLoader<Set<SqlTypeName>, ImmutableSet<SqlTypeName>>() {
-                public ImmutableSet<SqlTypeName> load(
-                    @Nonnull Set<SqlTypeName> key) {
-                  return Sets.immutableEnumSet(key);
-                }
-              });
+          CacheBuilder.newBuilder()
+              .build(CacheLoader.from(set -> Sets.immutableEnumSet(set)));
     }
 
     /** Creates a Builder as a copy of another Builder. */
@@ -418,7 +415,8 @@ public class SqlTypeAssignmentRules {
     void add(SqlTypeName fromType, Set<SqlTypeName> toTypes) {
       try {
         map.put(fromType, sets.get(toTypes));
-      } catch (ExecutionException e) {
+      } catch (UncheckedExecutionException | ExecutionException e) {
+        Util.throwIfUnchecked(e.getCause());
         throw new RuntimeException("populating SqlTypeAssignmentRules", e);
       }
     }

@@ -30,6 +30,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import com.google.common.collect.ImmutableList;
 
 import java.util.List;
+import javax.annotation.Nonnull;
 
 /**
  * Scalar expression that represents an IN, EXISTS or scalar sub-query.
@@ -55,10 +56,16 @@ public class RexSubQuery extends RexCall {
    * <p>There is no ALL. For {@code x comparison ALL (sub-query)} use instead
    * {@code NOT (x inverse-comparison SOME (sub-query))}.
    * If {@code comparison} is {@code >}
-   * then {@code negated-comparison} is {@code <=}, and so forth. */
+   * then {@code negated-comparison} is {@code <=}, and so forth.
+   *
+   * <p>Also =SOME is rewritten into IN</p> */
   public static RexSubQuery some(RelNode rel, ImmutableList<RexNode> nodes,
       SqlQuantifyOperator op) {
     assert op.kind == SqlKind.SOME;
+
+    if (op == SqlStdOperatorTable.SOME_EQ) {
+      return RexSubQuery.in(rel, nodes);
+    }
     final RelDataType type = type(rel, nodes);
     return new RexSubQuery(type, op, nodes, rel);
   }
@@ -86,7 +93,7 @@ public class RexSubQuery extends RexCall {
     final RelDataTypeFactory typeFactory = rel.getCluster().getTypeFactory();
     final RelDataType type = typeFactory.createSqlType(SqlTypeName.BOOLEAN);
     return new RexSubQuery(type, SqlStdOperatorTable.EXISTS,
-        ImmutableList.<RexNode>of(), rel);
+        ImmutableList.of(), rel);
   }
 
   /** Creates a scalar sub-query. */
@@ -97,7 +104,7 @@ public class RexSubQuery extends RexCall {
     final RelDataType type =
         typeFactory.createTypeWithNullability(fieldList.get(0).getType(), true);
     return new RexSubQuery(type, SqlStdOperatorTable.SCALAR_QUERY,
-        ImmutableList.<RexNode>of(), rel);
+        ImmutableList.of(), rel);
   }
 
   public <R> R accept(RexVisitor<R> visitor) {
@@ -108,11 +115,11 @@ public class RexSubQuery extends RexCall {
     return visitor.visitSubQuery(this, arg);
   }
 
-  @Override protected String computeDigest(boolean withType) {
-    StringBuilder sb = new StringBuilder(op.getName());
+  @Override protected @Nonnull String computeDigest(boolean withType) {
+    final StringBuilder sb = new StringBuilder(op.getName());
     sb.append("(");
     for (RexNode operand : operands) {
-      sb.append(operand.toString());
+      sb.append(operand);
       sb.append(", ");
     }
     sb.append("{\n");

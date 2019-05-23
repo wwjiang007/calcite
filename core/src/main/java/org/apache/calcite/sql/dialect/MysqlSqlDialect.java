@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.sql.dialect;
 
+import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.avatica.util.TimeUnit;
 import org.apache.calcite.avatica.util.TimeUnitRange;
 import org.apache.calcite.config.NullCollation;
@@ -50,6 +51,7 @@ public class MysqlSqlDialect extends SqlDialect {
       new MysqlSqlDialect(EMPTY_CONTEXT
           .withDatabaseProduct(DatabaseProduct.MYSQL)
           .withIdentifierQuoteString("`")
+          .withUnquotedCasing(Casing.UNCHANGED)
           .withNullCollation(NullCollation.LOW));
 
   /** MySQL specific function. */
@@ -58,9 +60,12 @@ public class MysqlSqlDialect extends SqlDialect {
           ReturnTypes.BOOLEAN, InferTypes.FIRST_KNOWN,
           OperandTypes.ANY, SqlFunctionCategory.SYSTEM);
 
+  private final int majorVersion;
+
   /** Creates a MysqlSqlDialect. */
   public MysqlSqlDialect(Context context) {
     super(context);
+    majorVersion = context.databaseMajorVersion();
   }
 
   @Override public boolean supportsCharSet() {
@@ -86,12 +91,20 @@ public class MysqlSqlDialect extends SqlDialect {
     case MAX:
     case SINGLE_VALUE:
       return true;
+    case ROLLUP:
+      // MySQL 5 does not support standard "GROUP BY ROLLUP(x, y)",
+      // only the non-standard "GROUP BY x, y WITH ROLLUP".
+      return majorVersion >= 8;
     }
     return false;
   }
 
   @Override public boolean supportsNestedAggregations() {
     return false;
+  }
+
+  @Override public boolean supportsGroupByWithRollup() {
+    return true;
   }
 
   @Override public CalendarPolicy getCalendarPolicy() {
@@ -105,7 +118,8 @@ public class MysqlSqlDialect extends SqlDialect {
       return new SqlDataTypeSpec(new SqlIdentifier("CHAR", SqlParserPos.ZERO),
           type.getPrecision(), -1, null, null, SqlParserPos.ZERO);
     case INTEGER:
-      return new SqlDataTypeSpec(new SqlIdentifier("_UNSIGNED", SqlParserPos.ZERO),
+    case BIGINT:
+      return new SqlDataTypeSpec(new SqlIdentifier("_SIGNED", SqlParserPos.ZERO),
           type.getPrecision(), -1, null, null, SqlParserPos.ZERO);
     }
     return super.getCastSpec(type);
@@ -127,12 +141,10 @@ public class MysqlSqlDialect extends SqlDialect {
             SqlStdOperatorTable.COUNT.createCall(SqlParserPos.ZERO, operand),
             SqlNodeList.of(
                 SqlLiteral.createExactNumeric("0", SqlParserPos.ZERO),
-                SqlLiteral.createExactNumeric("1", SqlParserPos.ZERO)
-            ),
+                SqlLiteral.createExactNumeric("1", SqlParserPos.ZERO)),
             SqlNodeList.of(
                 nullLiteral,
-                operand
-            ),
+                operand),
             SqlStdOperatorTable.SCALAR_QUERY.createCall(SqlParserPos.ZERO,
                 SqlStdOperatorTable.UNION_ALL
                     .createCall(SqlParserPos.ZERO, unionOperand, unionOperand)));
@@ -193,13 +205,13 @@ public class MysqlSqlDialect extends SqlDialect {
       format = "%Y-%m-%d";
       break;
     case HOUR:
-      format = "%Y-%m-%d %k:00:00";
+      format = "%Y-%m-%d %H:00:00";
       break;
     case MINUTE:
-      format = "%Y-%m-%d %k:%i:00";
+      format = "%Y-%m-%d %H:%i:00";
       break;
     case SECOND:
-      format = "%Y-%m-%d %k:%i:%s";
+      format = "%Y-%m-%d %H:%i:%s";
       break;
     default:
       throw new AssertionError("MYSQL does not support FLOOR for time unit: "

@@ -27,7 +27,9 @@ import org.apache.calcite.linq4j.tree.ClassDeclaration;
 import org.apache.calcite.linq4j.tree.ConditionalStatement;
 import org.apache.calcite.linq4j.tree.ConstantExpression;
 import org.apache.calcite.linq4j.tree.Expression;
+import org.apache.calcite.linq4j.tree.ExpressionType;
 import org.apache.calcite.linq4j.tree.Expressions;
+import org.apache.calcite.linq4j.tree.FunctionExpression;
 import org.apache.calcite.linq4j.tree.GotoStatement;
 import org.apache.calcite.linq4j.tree.MemberDeclaration;
 import org.apache.calcite.linq4j.tree.MethodCallExpression;
@@ -37,16 +39,18 @@ import org.apache.calcite.linq4j.tree.ParameterExpression;
 import org.apache.calcite.linq4j.tree.Primitive;
 import org.apache.calcite.linq4j.tree.Statement;
 import org.apache.calcite.linq4j.tree.Types;
+import org.apache.calcite.linq4j.tree.UnaryExpression;
 import org.apache.calcite.linq4j.tree.VisitorImpl;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.runtime.Bindable;
+import org.apache.calcite.sql.validate.SqlConformance;
+import org.apache.calcite.sql.validate.SqlConformanceEnum;
 import org.apache.calcite.util.BuiltInMethod;
 
-import com.google.common.base.Function;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Maps;
 
 import java.io.Serializable;
 import java.lang.reflect.Method;
@@ -56,7 +60,9 @@ import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -69,17 +75,12 @@ import java.util.Set;
 public class EnumerableRelImplementor extends JavaRelImplementor {
   public final Map<String, Object> map;
   private final Map<String, RexToLixTranslator.InputGetter> corrVars =
-      Maps.newHashMap();
+      new HashMap<>();
   private final Map<Object, ParameterExpression> stashedParameters =
-      Maps.newIdentityHashMap();
-  int windowCount = 0;
+      new IdentityHashMap<>();
 
   protected final Function1<String, RexToLixTranslator.InputGetter> allCorrelateVariables =
-      new Function1<String, RexToLixTranslator.InputGetter>() {
-        public RexToLixTranslator.InputGetter apply(String name) {
-          return getCorrelVariableGetter(name);
-        }
-      };
+      this::getCorrelVariableGetter;
 
   public EnumerableRelImplementor(RexBuilder rexBuilder,
       Map<String, Object> internalParameters) {
@@ -127,57 +128,40 @@ public class EnumerableRelImplementor extends JavaRelImplementor {
     final List<MemberDeclaration> memberDeclarations = new ArrayList<>();
     new TypeRegistrar(memberDeclarations).go(result);
 
-    // The following is a workaround to
-    // http://jira.codehaus.org/browse/JANINO-169. Otherwise we'd remove the
-    // member variable, rename the "root0" parameter as "root", and reference it
-    // directly from inner classes.
-    final ParameterExpression root0_ =
-        Expressions.parameter(Modifier.FINAL, DataContext.class, "root0");
-
     // This creates the following code
     // final Integer v1stashed = (Integer) root.get("v1stashed")
     // It is convenient for passing non-literal "compile-time" constants
     final Collection<Statement> stashed =
         Collections2.transform(stashedParameters.values(),
-            new Function<ParameterExpression, Statement>() {
-              public Statement apply(ParameterExpression input) {
-                return Expressions.declare(Modifier.FINAL, input,
-                    Expressions.convert_(
-                        Expressions.call(DataContext.ROOT,
-                            BuiltInMethod.DATA_CONTEXT_GET.method,
-                            Expressions.constant(input.name)),
-                        input.type));
-              }
-            });
+            input -> Expressions.declare(Modifier.FINAL, input,
+                Expressions.convert_(
+                    Expressions.call(DataContext.ROOT,
+                        BuiltInMethod.DATA_CONTEXT_GET.method,
+                        Expressions.constant(input.name)),
+                    input.type)));
 
     final BlockStatement block = Expressions.block(
         Iterables.concat(
-            ImmutableList.of(
-                Expressions.statement(
-                    Expressions.assign(DataContext.ROOT, root0_))),
             stashed,
             result.block.statements));
-    memberDeclarations.add(
-        Expressions.fieldDecl(0, DataContext.ROOT, null));
-
     memberDeclarations.add(
         Expressions.methodDecl(
             Modifier.PUBLIC,
             Enumerable.class,
             BuiltInMethod.BINDABLE_BIND.method.getName(),
-            Expressions.list(root0_),
+            Expressions.list(DataContext.ROOT),
             block));
     memberDeclarations.add(
         Expressions.methodDecl(Modifier.PUBLIC, Class.class,
             BuiltInMethod.TYPED_GET_ELEMENT_TYPE.method.getName(),
-            Collections.<ParameterExpression>emptyList(),
+            ImmutableList.of(),
             Blocks.toFunctionBlock(
                 Expressions.return_(null,
                     Expressions.constant(result.physType.getJavaRowType())))));
     return Expressions.classDecl(Modifier.PUBLIC,
         "Baz",
         null,
-        Collections.<Type>singletonList(Bindable.class),
+        Collections.singletonList(Bindable.class),
         memberDeclarations);
   }
 
@@ -188,8 +172,8 @@ public class EnumerableRelImplementor extends JavaRelImplementor {
             Modifier.PUBLIC | Modifier.STATIC,
             type.getName(),
             null,
-            ImmutableList.<Type>of(Serializable.class),
-            new ArrayList<MemberDeclaration>());
+            ImmutableList.of(Serializable.class),
+            new ArrayList<>());
 
     // For each field:
     //   public T0 f0;
@@ -302,7 +286,7 @@ public class EnumerableRelImplementor extends JavaRelImplementor {
             Modifier.PUBLIC,
             int.class,
             "hashCode",
-            Collections.<ParameterExpression>emptyList(),
+            Collections.emptyList(),
             blockBuilder3.toBlock()));
 
     // compareTo method:
@@ -400,7 +384,7 @@ public class EnumerableRelImplementor extends JavaRelImplementor {
             Modifier.PUBLIC,
             String.class,
             "toString",
-            Collections.<ParameterExpression>emptyList(),
+            Collections.emptyList(),
             blockBuilder5.toBlock()));
 
     return classDeclaration;
@@ -435,8 +419,7 @@ public class EnumerableRelImplementor extends JavaRelImplementor {
         || input instanceof Integer
         || input instanceof Long
         || input instanceof Float
-        || input instanceof Double
-        ) {
+        || input instanceof Double) {
       return Expressions.constant(input, clazz);
     }
     ParameterExpression cached = stashedParameters.get(input);
@@ -455,12 +438,10 @@ public class EnumerableRelImplementor extends JavaRelImplementor {
   public void registerCorrelVariable(final String name,
       final ParameterExpression pe,
       final BlockBuilder corrBlock, final PhysType physType) {
-    corrVars.put(name, new RexToLixTranslator.InputGetter() {
-      public Expression field(BlockBuilder list, int index, Type storageType) {
-        Expression fieldReference =
-            physType.fieldReference(pe, index, storageType);
-        return corrBlock.append(name + "_" + index, fieldReference);
-      }
+    corrVars.put(name, (list, index, storageType) -> {
+      Expression fieldReference =
+          physType.fieldReference(pe, index, storageType);
+      return corrBlock.append(name + "_" + index, fieldReference);
     });
   }
 
@@ -481,8 +462,14 @@ public class EnumerableRelImplementor extends JavaRelImplementor {
         block, physType, ((PhysTypeImpl) physType).format);
   }
 
+  public SqlConformance getConformance() {
+    return (SqlConformance) map.getOrDefault("_conformance",
+        SqlConformanceEnum.DEFAULT);
+  }
+
   /** Visitor that finds types in an {@link Expression} tree. */
-  private static class TypeFinder extends VisitorImpl<Void> {
+  @VisibleForTesting
+  static class TypeFinder extends VisitorImpl<Void> {
     private final Collection<Type> types;
 
     TypeFinder(Collection<Type> types) {
@@ -508,10 +495,35 @@ public class EnumerableRelImplementor extends JavaRelImplementor {
     }
 
     @Override public Void visit(ConstantExpression constantExpression) {
-      if (constantExpression.value instanceof Type) {
-        types.add((Type) constantExpression.value);
+      final Object value = constantExpression.value;
+      if (value instanceof Type) {
+        types.add((Type) value);
+      }
+      if (value == null) {
+        // null literal
+        Type type = constantExpression.getType();
+        types.add(type);
       }
       return super.visit(constantExpression);
+    }
+
+    @Override public Void visit(FunctionExpression functionExpression) {
+      final List<ParameterExpression> list = functionExpression.parameterList;
+      for (ParameterExpression pe : list) {
+        types.add(pe.getType());
+      }
+      if (functionExpression.body == null) {
+        return super.visit(functionExpression);
+      }
+      types.add(functionExpression.body.getType());
+      return super.visit(functionExpression);
+    }
+
+    @Override public Void visit(UnaryExpression unaryExpression) {
+      if (unaryExpression.nodeType == ExpressionType.Convert) {
+        types.add(unaryExpression.getType());
+      }
+      return super.visit(unaryExpression);
     }
   }
 

@@ -165,6 +165,8 @@ public abstract class RelOptRuleCall {
    * children, and hence where the matched children are not retrievable by any
    * other means.
    *
+   * <p>Warning: it produces wrong result for {@code unordered(...)} case.
+   *
    * @param rel Relational expression
    * @return Children of relational expression
    */
@@ -231,7 +233,7 @@ public abstract class RelOptRuleCall {
    *            expression of the rule call, {@code call.rels(0)}
    */
   public final void transformTo(RelNode rel) {
-    transformTo(rel, ImmutableMap.<RelNode, RelNode>of());
+    transformTo(rel, ImmutableMap.of());
   }
 
   /** Creates a {@link org.apache.calcite.tools.RelBuilder} to be used by

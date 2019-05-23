@@ -25,6 +25,7 @@ import org.apache.calcite.adapter.jdbc.JdbcConvention;
 import org.apache.calcite.adapter.jdbc.JdbcImplementor;
 import org.apache.calcite.adapter.jdbc.JdbcRel;
 import org.apache.calcite.adapter.jdbc.JdbcRules;
+import org.apache.calcite.config.CalciteSystemProperty;
 import org.apache.calcite.config.Lex;
 import org.apache.calcite.plan.ConventionTraitDef;
 import org.apache.calcite.plan.RelOptCluster;
@@ -48,7 +49,12 @@ import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rel.rules.FilterMergeRule;
 import org.apache.calcite.rel.rules.ProjectMergeRule;
 import org.apache.calcite.rel.rules.ProjectToWindowRule;
+import org.apache.calcite.rel.rules.PruneEmptyRules;
+import org.apache.calcite.rel.rules.SortJoinTransposeRule;
+import org.apache.calcite.rel.rules.SortProjectTransposeRule;
 import org.apache.calcite.rel.rules.SortRemoveRule;
+import org.apache.calcite.rel.rules.UnionMergeRule;
+import org.apache.calcite.rel.rules.ValuesReduceRule;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.schema.SchemaPlus;
@@ -60,11 +66,11 @@ import org.apache.calcite.sql.SqlExplainLevel;
 import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
+import org.apache.calcite.sql.test.SqlTests;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
 import org.apache.calcite.sql.type.SqlTypeName;
@@ -73,11 +79,14 @@ import org.apache.calcite.sql.util.ListSqlOperatorTable;
 import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorScope;
 import org.apache.calcite.test.CalciteAssert;
+import org.apache.calcite.test.RelBuilderTest;
+import org.apache.calcite.util.Optionality;
 import org.apache.calcite.util.Util;
 
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 
+import org.hamcrest.Matcher;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -89,7 +98,8 @@ import static org.apache.calcite.plan.RelOptRule.operand;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.notNullValue;
-
+import static org.hamcrest.core.Is.is;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
@@ -196,7 +206,7 @@ public class PlannerTest {
     SqlOperatorTable opTab =
         ChainedSqlOperatorTable.of(stdOpTab,
             new ListSqlOperatorTable(
-                ImmutableList.<SqlOperator>of(new MyCountAggFunction())));
+                ImmutableList.of(new MyCountAggFunction())));
     final SchemaPlus rootSchema = Frameworks.createRootSchema(true);
     final FrameworkConfig config = Frameworks.newConfigBuilder()
         .defaultSchema(
@@ -360,13 +370,154 @@ public class PlannerTest {
     SqlNode parse = planner.parse("select * from \"emps\"");
     SqlNode validate = planner.validate(parse);
     RelNode convert = planner.rel(validate).project();
-    RelTraitSet traitSet = planner.getEmptyTraitSet()
+    RelTraitSet traitSet = convert.getTraitSet()
         .replace(EnumerableConvention.INSTANCE);
     RelNode transform = planner.transform(0, traitSet, convert);
     assertThat(toString(transform),
         equalTo(
             "EnumerableProject(empid=[$0], deptno=[$1], name=[$2], salary=[$3], commission=[$4])\n"
             + "  EnumerableTableScan(table=[[hr, emps]])\n"));
+  }
+
+  /** Unit test that parses, validates, converts and plans. */
+  @Test public void trimEmptyUnion2() throws Exception {
+    checkUnionPruning("values(1) union all select * from (values(2)) where false",
+        "EnumerableValues(type=[RecordType(INTEGER EXPR$0)], tuples=[[{ 1 }]])\n");
+
+    checkUnionPruning("select * from (values(2)) where false union all values(1)",
+        "EnumerableValues(type=[RecordType(INTEGER EXPR$0)], tuples=[[{ 1 }]])\n");
+  }
+
+  @Test public void trimEmptyUnion31() throws Exception {
+    emptyUnions31();
+  }
+
+  @Test public void trimEmptyUnion31withUnionMerge() throws Exception {
+    emptyUnions31(UnionMergeRule.INSTANCE);
+  }
+
+  private void emptyUnions31(UnionMergeRule... extraRules)
+      throws SqlParseException, ValidationException, RelConversionException {
+    String plan = "EnumerableValues(type=[RecordType(INTEGER EXPR$0)], tuples=[[{ 1 }]])\n";
+    checkUnionPruning("values(1)"
+            + " union all select * from (values(2)) where false"
+            + " union all select * from (values(3)) where false",
+        plan, extraRules);
+
+    checkUnionPruning("select * from (values(2)) where false"
+            + " union all values(1)"
+            + " union all select * from (values(3)) where false",
+        plan, extraRules);
+
+    checkUnionPruning("select * from (values(2)) where false"
+            + " union all select * from (values(3)) where false"
+            + " union all values(1)",
+        plan, extraRules);
+  }
+
+  @Ignore("[CALCITE-2773] java.lang.AssertionError: rel"
+      + " [rel#69:EnumerableUnion.ENUMERABLE.[](input#0=RelSubset#78,input#1=RelSubset#71,all=true)]"
+      + " has lower cost {4.0 rows, 4.0 cpu, 0.0 io} than best cost {5.0 rows, 5.0 cpu, 0.0 io}"
+      + " of subset [rel#67:Subset#6.ENUMERABLE.[]]")
+  @Test public void trimEmptyUnion32() throws Exception {
+    emptyUnions32();
+  }
+
+  @Test public void trimEmptyUnion32withUnionMerge() throws Exception {
+    emptyUnions32(UnionMergeRule.INSTANCE);
+  }
+
+  private void emptyUnions32(UnionMergeRule... extraRules)
+      throws SqlParseException, ValidationException, RelConversionException {
+    String plan = "EnumerableUnion(all=[true])\n"
+        + "  EnumerableValues(type=[RecordType(INTEGER EXPR$0)], tuples=[[{ 1 }]])\n"
+        + "  EnumerableValues(type=[RecordType(INTEGER EXPR$0)], tuples=[[{ 2 }]])\n";
+
+    checkUnionPruning("values(1)"
+            + " union all values(2)"
+            + " union all select * from (values(3)) where false",
+        plan, extraRules);
+
+    checkUnionPruning("values(1)"
+            + " union all select * from (values(3)) where false"
+            + " union all values(2)",
+        plan, extraRules);
+
+    checkUnionPruning("select * from (values(2)) where false"
+            + " union all values(1)"
+            + " union all values(2)",
+        plan, extraRules);
+  }
+
+  private void checkUnionPruning(String sql, String plan, RelOptRule... extraRules)
+      throws SqlParseException, ValidationException, RelConversionException {
+    ImmutableList.Builder<RelOptRule> rules = ImmutableList.<RelOptRule>builder().add(
+        PruneEmptyRules.UNION_INSTANCE,
+        ValuesReduceRule.PROJECT_FILTER_INSTANCE,
+        EnumerableRules.ENUMERABLE_PROJECT_RULE,
+        EnumerableRules.ENUMERABLE_FILTER_RULE,
+        EnumerableRules.ENUMERABLE_VALUES_RULE,
+        EnumerableRules.ENUMERABLE_UNION_RULE);
+    rules.add(extraRules);
+    Program program = Programs.ofRules(rules.build());
+    Planner planner = getPlanner(null, program);
+    SqlNode parse = planner.parse(sql);
+    SqlNode validate = planner.validate(parse);
+    RelNode convert = planner.rel(validate).project();
+    RelTraitSet traitSet = convert.getTraitSet()
+        .replace(EnumerableConvention.INSTANCE);
+    RelNode transform = planner.transform(0, traitSet, convert);
+    assertThat("Empty values should be removed from " + sql,
+        toString(transform), equalTo(plan));
+  }
+
+  @Ignore("[CALCITE-2773] java.lang.AssertionError: rel"
+      + " [rel#17:EnumerableUnion.ENUMERABLE.[](input#0=RelSubset#26,input#1=RelSubset#19,all=true)]"
+      + " has lower cost {4.0 rows, 4.0 cpu, 0.0 io}"
+      + " than best cost {5.0 rows, 5.0 cpu, 0.0 io} of subset [rel#15:Subset#5.ENUMERABLE.[]]")
+  @Test public void trimEmptyUnion32viaRelBuidler() throws Exception {
+    RelBuilder relBuilder = RelBuilder.create(RelBuilderTest.config().build());
+
+    // This somehow blows up (see trimEmptyUnion32, the second case)
+    // (values(1) union all select * from (values(3)) where false)
+    // union all values(2)
+
+    // Non-trivial filter is important for the test to fail
+    RelNode relNode = relBuilder
+        .values(new String[]{"x"}, "1")
+        .values(new String[]{"x"}, "3")
+        .filter(relBuilder.equals(relBuilder.field("x"), relBuilder.literal("30")))
+        .union(true)
+        .values(new String[]{"x"}, "2")
+        .union(true)
+        .build();
+
+    RelOptPlanner planner = relNode.getCluster().getPlanner();
+    RuleSet ruleSet =
+        RuleSets.ofList(
+            PruneEmptyRules.UNION_INSTANCE,
+            ValuesReduceRule.FILTER_INSTANCE,
+            EnumerableRules.ENUMERABLE_PROJECT_RULE,
+            EnumerableRules.ENUMERABLE_FILTER_RULE,
+            EnumerableRules.ENUMERABLE_VALUES_RULE,
+            EnumerableRules.ENUMERABLE_UNION_RULE);
+    Program program = Programs.of(ruleSet);
+
+    RelTraitSet toTraits = relNode.getTraitSet()
+        .replace(EnumerableConvention.INSTANCE);
+
+    RelNode output = program.run(planner, relNode, toTraits,
+        ImmutableList.of(), ImmutableList.of());
+
+    // Expected outcomes are:
+    // 1) relation is optimized to simple VALUES
+    // 2) the number of rule invocations is reasonable
+    // 3) planner does not throw OutOfMemoryError
+    assertThat("empty union should be pruned out of " + toString(relNode),
+        Util.toLinux(toString(output)),
+        equalTo("EnumerableUnion(all=[true])\n"
+            + "  EnumerableValues(type=[RecordType(INTEGER EXPR$0)], tuples=[[{ 1 }]])\n"
+            + "  EnumerableValues(type=[RecordType(INTEGER EXPR$0)], tuples=[[{ 2 }]])\n"));
   }
 
   /** Unit test that parses, validates, converts and
@@ -392,9 +543,49 @@ public class PlannerTest {
             + "    EnumerableTableScan(table=[[hr, emps]])\n"));
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-2554">[CALCITE-2554]
+   * Enrich EnumerableJoin operator with order preserving information</a>.
+   *
+   * <p>Since the left input to the join is sorted, and this join preserves
+   * order, there shouldn't be any sort operator above the join.
+   */
+  @Test public void testRedundantSortOnJoinPlan() throws Exception {
+    RuleSet ruleSet =
+        RuleSets.ofList(
+            SortRemoveRule.INSTANCE,
+            SortJoinTransposeRule.INSTANCE,
+            SortProjectTransposeRule.INSTANCE,
+            EnumerableRules.ENUMERABLE_LIMIT_RULE,
+            EnumerableRules.ENUMERABLE_JOIN_RULE,
+            EnumerableRules.ENUMERABLE_PROJECT_RULE,
+            EnumerableRules.ENUMERABLE_SORT_RULE);
+    Planner planner = getPlanner(null, Programs.of(ruleSet));
+    SqlNode parse = planner.parse(
+        "select e.\"deptno\" from \"emps\" e "
+            + "left outer join \"depts\" d "
+            + " on e.\"deptno\" = d.\"deptno\" "
+            + "order by e.\"deptno\" "
+            + "limit 10");
+    SqlNode validate = planner.validate(parse);
+    RelNode convert = planner.rel(validate).rel;
+    RelTraitSet traitSet = convert.getTraitSet()
+        .replace(EnumerableConvention.INSTANCE).simplify();
+    RelNode transform = planner.transform(0, traitSet, convert);
+    assertThat(toString(transform),
+        equalTo("EnumerableProject(deptno=[$1])\n"
+        + "  EnumerableLimit(fetch=[10])\n"
+        + "    EnumerableJoin(condition=[=($1, $5)], joinType=[left])\n"
+        + "      EnumerableLimit(fetch=[10])\n"
+        + "        EnumerableSort(sort0=[$1], dir0=[ASC])\n"
+        + "          EnumerableTableScan(table=[[hr, emps]])\n"
+        + "      EnumerableProject(deptno=[$0], name=[$1], employees=[$2], x=[$3.x], y=[$3.y])\n"
+        + "        EnumerableTableScan(table=[[hr, depts]])\n"));
+  }
+
   /** Unit test that parses, validates, converts and
    * plans for query using two duplicate order by.
-   * The duplicate order by should be removed by SortRemoveRule. */
+   * The duplicate order by should be removed by SqlToRelConverter. */
   @Test public void testDuplicateSortPlan() throws Exception {
     runDuplicateSortCheck(
         "select empid from ( "
@@ -402,34 +593,53 @@ public class PlannerTest {
         + "from emps "
         + "order by emps.deptno) "
         + "order by deptno",
-        "EnumerableProject(empid=[$0], deptno=[$1])\n"
-        + "  EnumerableSort(sort0=[$1], dir0=[ASC])\n"
-        + "    EnumerableProject(empid=[$0], deptno=[$1], name=[$2], salary=[$3], commission=[$4])\n"
-        + "      EnumerableTableScan(table=[[hr, emps]])\n");
+        "EnumerableSort(sort0=[$1], dir0=[ASC])\n"
+        + "  EnumerableProject(empid=[$0], deptno=[$1])\n"
+        + "    EnumerableTableScan(table=[[hr, emps]])\n");
   }
 
   /** Unit test that parses, validates, converts and
    * plans for query using two duplicate order by.
-   * The duplicate order by should be removed by SortRemoveRule*/
+   * The duplicate order by should be removed by SqlToRelConverter. */
   @Test public void testDuplicateSortPlanWithExpr() throws Exception {
     runDuplicateSortCheck("select empid+deptno from ( "
         + "select empid, deptno "
         + "from emps "
         + "order by emps.deptno) "
         + "order by deptno",
-        "EnumerableProject(EXPR$0=[+($0, $1)], deptno=[$1])\n"
-        + "  EnumerableSort(sort0=[$1], dir0=[ASC])\n"
-        + "    EnumerableProject(empid=[$0], deptno=[$1])\n"
-        + "      EnumerableTableScan(table=[[hr, emps]])\n");
+        "EnumerableSort(sort0=[$1], dir0=[ASC])\n"
+        + "  EnumerableProject(EXPR$0=[+($0, $1)], deptno=[$1])\n"
+        + "    EnumerableTableScan(table=[[hr, emps]])\n");
+  }
+
+  @Test public void testTwoSortRemoveInnerSort() throws Exception {
+    runDuplicateSortCheck("select empid+deptno from ( "
+        + "select empid, deptno "
+        + "from emps "
+        + "order by empid) "
+        + "order by deptno",
+        "EnumerableSort(sort0=[$1], dir0=[ASC])\n"
+        + "  EnumerableProject(EXPR$0=[+($0, $1)], deptno=[$1])\n"
+        + "    EnumerableTableScan(table=[[hr, emps]])\n");
   }
 
   /** Tests that outer order by is not removed since window function
    * might reorder the rows in-between */
-  @Ignore("RelOptPlanner$CannotPlanException: Node [rel#27:Subset#6"
-      + ".ENUMERABLE.[]] could not be implemented; planner state:\n"
-      + "\n"
-      + "Root: rel#27:Subset#6.ENUMERABLE.[]")
   @Test public void testDuplicateSortPlanWithOver() throws Exception {
+    runDuplicateSortCheck("select emp_cnt, empid+deptno from ( "
+        + "select empid, deptno, count(*) over (partition by deptno) emp_cnt from ( "
+        + "  select empid, deptno "
+        + "    from emps "
+        + "   order by emps.deptno) "
+        + ")"
+        + "order by deptno",
+        "EnumerableSort(sort0=[$2], dir0=[ASC])\n"
+        + "  EnumerableProject(emp_cnt=[$5], EXPR$1=[+($0, $1)], deptno=[$1])\n"
+        + "    EnumerableWindow(window#0=[window(partition {1} order by [] range between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING aggs [COUNT()])])\n"
+        + "      EnumerableTableScan(table=[[hr, emps]])\n");
+  }
+
+  @Test public void testDuplicateSortPlanWithRemovedOver() throws Exception {
     runDuplicateSortCheck("select empid+deptno from ( "
         + "select empid, deptno, count(*) over (partition by deptno) emp_cnt from ( "
         + "  select empid, deptno "
@@ -437,14 +647,9 @@ public class PlannerTest {
         + "   order by emps.deptno) "
         + ")"
         + "order by deptno",
-        "EnumerableProject(EXPR$0=[$0])\n"
-        + "  EnumerableSort(sort0=[$1], dir0=[ASC])\n"
-        + "    EnumerableProject(EXPR$0=[+($0, $1)], deptno=[$1])\n"
-        + "      EnumerableProject(empid=[$0], deptno=[$1], $2=[$2])\n"
-        + "        EnumerableWindow(window#0=[window(partition {1} order by [] range between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING aggs [COUNT()])])\n"
-        + "          EnumerableSort(sort0=[$1], dir0=[ASC])\n"
-        + "            EnumerableProject(empid=[$0], deptno=[$1])\n"
-        + "              EnumerableTableScan(table=[[hr, emps]])\n");
+        "EnumerableSort(sort0=[$1], dir0=[ASC])\n"
+        + "  EnumerableProject(EXPR$0=[+($0, $1)], deptno=[$1])\n"
+        + "    EnumerableTableScan(table=[[hr, emps]])\n");
   }
 
   // If proper "SqlParseException, ValidationException, RelConversionException"
@@ -465,7 +670,7 @@ public class PlannerTest {
     SqlNode parse = planner.parse(sql);
     SqlNode validate = planner.validate(parse);
     RelNode convert = planner.rel(validate).rel;
-    RelTraitSet traitSet = planner.getEmptyTraitSet()
+    RelTraitSet traitSet = convert.getTraitSet()
         .replace(EnumerableConvention.INSTANCE);
     if (traitSet.getTrait(RelCollationTraitDef.INSTANCE) == null) {
       // SortRemoveRule can only work if collation trait is enabled.
@@ -491,16 +696,31 @@ public class PlannerTest {
             + "order by \"deptno\"");
     SqlNode validate = planner.validate(parse);
     RelNode convert = planner.rel(validate).rel;
-    RelTraitSet traitSet = planner.getEmptyTraitSet()
+    RelTraitSet traitSet = convert.getTraitSet()
         .replace(EnumerableConvention.INSTANCE);
     RelNode transform = planner.transform(0, traitSet, convert);
     assertThat(toString(transform),
         equalTo("EnumerableSort(sort0=[$1], dir0=[ASC])\n"
             + "  EnumerableProject(empid=[$0], deptno=[$1])\n"
-            + "    EnumerableSort(sort0=[$1], dir0=[ASC])\n"
-            + "      EnumerableProject(empid=[$0], deptno=[$1], name=[$2], salary=[$3], commission=[$4])\n"
-            + "        EnumerableTableScan(table=[[hr, emps]])\n"));
+            + "    EnumerableTableScan(table=[[hr, emps]])\n"));
   }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-3029">[CALCITE-3029]
+   * Java-oriented field type is wrongly forced to be NOT NULL after being converted to
+   * SQL-oriented</a>. */
+  @Test public void testInsertSourceRelTypeWithNullValues() throws Exception {
+    Planner planner = getPlanner(null, Programs.standard());
+    SqlNode parse = planner.parse(
+        "insert into \"emps\" values(1, 1, null, 1, 1)");
+    SqlNode validate = planner.validate(parse);
+    RelNode convert = planner.rel(validate).rel;
+    RelDataType insertSourceType = convert.getInput(0).getRowType();
+    String typeString = SqlTests.getTypeString(insertSourceType);
+    assertEquals("RecordType(INTEGER NOT NULL empid, INTEGER NOT NULL deptno, VARCHAR name, "
+            + "REAL NOT NULL salary, INTEGER commission) NOT NULL", typeString);
+  }
+
 
   /** Unit test that parses, validates, converts and plans. Planner is
    * provided with a list of RelTraitDefs to register. */
@@ -519,7 +739,7 @@ public class PlannerTest {
     SqlNode parse = planner.parse("select * from \"emps\"");
     SqlNode validate = planner.validate(parse);
     RelNode convert = planner.rel(validate).project();
-    RelTraitSet traitSet = planner.getEmptyTraitSet()
+    RelTraitSet traitSet = convert.getTraitSet()
         .replace(EnumerableConvention.INSTANCE);
     RelNode transform = planner.transform(0, traitSet, convert);
     assertThat(toString(transform),
@@ -539,7 +759,7 @@ public class PlannerTest {
     SqlNode parse = planner.parse("select * from \"emps\"");
     SqlNode validate = planner.validate(parse);
     RelNode convert = planner.rel(validate).project();
-    RelTraitSet traitSet = planner.getEmptyTraitSet()
+    RelTraitSet traitSet = convert.getTraitSet()
         .replace(EnumerableConvention.INSTANCE);
     RelNode transform = planner.transform(0, traitSet, convert);
     RelNode transform2 = planner.transform(0, traitSet, transform);
@@ -593,7 +813,7 @@ public class PlannerTest {
     SqlNode parse = planner.parse("select * from \"emps\"");
     SqlNode validate = planner.validate(parse);
     RelNode convert = planner.rel(validate).rel;
-    RelTraitSet traitSet = planner.getEmptyTraitSet()
+    RelTraitSet traitSet = convert.getTraitSet()
         .replace(EnumerableConvention.INSTANCE);
     RelNode transform = planner.transform(0, traitSet, convert);
     RelNode transform2 = planner.transform(1, traitSet, transform);
@@ -643,10 +863,10 @@ public class PlannerTest {
     SqlNode validate = planner.validate(parse);
     RelNode convert = planner.rel(validate).project();
 
-    RelTraitSet traitSet0 = planner.getEmptyTraitSet()
+    RelTraitSet traitSet0 = convert.getTraitSet()
         .replace(EnumerableConvention.INSTANCE);
 
-    RelTraitSet traitSet1 = planner.getEmptyTraitSet()
+    RelTraitSet traitSet1 = convert.getTraitSet()
         .replace(out);
 
     RelNode transform = planner.transform(0, traitSet0, convert);
@@ -680,7 +900,7 @@ public class PlannerTest {
     checkJoinNWay(5); // LoptOptimizeJoinRule disabled; takes about .4s
     checkJoinNWay(9); // LoptOptimizeJoinRule enabled; takes about 0.04s
     checkJoinNWay(35); // takes about 2s
-    if (CalciteAssert.ENABLE_SLOW) {
+    if (CalciteSystemProperty.TEST_SLOW.value()) {
       checkJoinNWay(60); // takes about 15s
     }
   }
@@ -703,7 +923,7 @@ public class PlannerTest {
 
     SqlNode validate = planner.validate(parse);
     RelNode convert = planner.rel(validate).project();
-    RelTraitSet traitSet = planner.getEmptyTraitSet()
+    RelTraitSet traitSet = convert.getTraitSet()
         .replace(EnumerableConvention.INSTANCE);
     RelNode transform = planner.transform(0, traitSet, convert);
     assertThat(toString(transform),
@@ -785,7 +1005,7 @@ public class PlannerTest {
     SqlNode parse = planner.parse(sql);
     SqlNode validate = planner.validate(parse);
     RelNode convert = planner.rel(validate).rel;
-    RelTraitSet traitSet = planner.getEmptyTraitSet()
+    RelTraitSet traitSet = convert.getTraitSet()
         .replace(EnumerableConvention.INSTANCE);
     RelNode transform = planner.transform(0, traitSet, convert);
     assertThat(toString(transform), containsString(expected));
@@ -935,7 +1155,7 @@ public class PlannerTest {
 
     SqlNode validate = planner.validate(parse);
     RelNode convert = planner.rel(validate).project();
-    RelTraitSet traitSet = planner.getEmptyTraitSet()
+    RelTraitSet traitSet = convert.getTraitSet()
         .replace(EnumerableConvention.INSTANCE);
     RelNode transform = planner.transform(0, traitSet, convert);
     assertThat(toString(transform), containsString(expected));
@@ -1060,7 +1280,8 @@ public class PlannerTest {
   public static class MyCountAggFunction extends SqlAggFunction {
     public MyCountAggFunction() {
       super("MY_COUNT", null, SqlKind.OTHER_FUNCTION, ReturnTypes.BIGINT, null,
-          OperandTypes.ANY, SqlFunctionCategory.NUMERIC, false, false);
+          OperandTypes.ANY, SqlFunctionCategory.NUMERIC, false, false,
+          Optionality.FORBIDDEN);
     }
 
     @SuppressWarnings("deprecation")
@@ -1118,10 +1339,7 @@ public class PlannerTest {
     assertThat(plan,
         equalTo("LogicalSort(sort0=[$0], dir0=[ASC])\n"
         + "  LogicalProject(psPartkey=[$0])\n"
-        + "    LogicalProject(psPartkey=[$0])\n"
-        + "      LogicalSort(sort0=[$0], sort1=[$1], dir0=[ASC], dir1=[ASC])\n"
-        + "        LogicalProject(psPartkey=[$0], psSupplyCost=[$1])\n"
-        + "          EnumerableTableScan(table=[[tpch, partsupp]])\n"));
+        + "    EnumerableTableScan(table=[[tpch, partsupp]])\n"));
   }
 
   /** Test case for
@@ -1134,6 +1352,44 @@ public class PlannerTest {
                 RelBuilder.proto(RelFactories.DEFAULT_PROJECT_FACTORY)));
     Planner planner = getPlanner(null, Programs.of(ruleSet));
     planner.close();
+  }
+
+  @Test public void testView() throws Exception {
+    final String sql = "select * FROM dept";
+    final String expected = "LogicalProject(DEPTNO=[$0], DNAME=[$1])\n"
+        + "  LogicalValues(type=[RecordType(INTEGER DEPTNO, CHAR(11) DNAME)], "
+        + "tuples=[[{ 10, 'Sales      ' },"
+        + " { 20, 'Marketing  ' },"
+        + " { 30, 'Engineering' },"
+        + " { 40, 'Empty      ' }]])\n";
+    checkView(sql, is(expected));
+  }
+
+  @Test public void testViewOnView() throws Exception {
+    final String sql = "select * FROM dept30";
+    final String expected = "LogicalProject(DEPTNO=[$0], DNAME=[$1])\n"
+        + "  LogicalFilter(condition=[=($0, 30)])\n"
+        + "    LogicalProject(DEPTNO=[$0], DNAME=[$1])\n"
+        + "      LogicalValues(type=[RecordType(INTEGER DEPTNO, CHAR(11) DNAME)], "
+        + "tuples=[[{ 10, 'Sales      ' },"
+        + " { 20, 'Marketing  ' },"
+        + " { 30, 'Engineering' },"
+        + " { 40, 'Empty      ' }]])\n";
+    checkView(sql, is(expected));
+  }
+
+  private void checkView(String sql, Matcher<String> matcher)
+      throws SqlParseException, ValidationException, RelConversionException {
+    final SchemaPlus rootSchema = Frameworks.createRootSchema(true);
+    final FrameworkConfig config = Frameworks.newConfigBuilder()
+        .defaultSchema(
+            CalciteAssert.addSchema(rootSchema, CalciteAssert.SchemaSpec.POST))
+        .build();
+    final Planner planner = Frameworks.getPlanner(config);
+    SqlNode parse = planner.parse(sql);
+    final SqlNode validate = planner.validate(parse);
+    final RelRoot root = planner.rel(validate);
+    assertThat(toString(root.rel), matcher);
   }
 }
 

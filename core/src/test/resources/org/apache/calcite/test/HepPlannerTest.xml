@@ -150,12 +150,12 @@ LogicalIntersect(all=[false])
       <![CDATA[
 LogicalIntersect(all=[false])
   LogicalUnion(all=[false])
-    LogicalProject(NAME=[CAST($0):VARCHAR(20) CHARACTER SET "ISO-8859-1" COLLATE "ISO-8859-1$en_US$primary" NOT NULL])
+    LogicalProject(NAME=[CAST($0):VARCHAR(20) NOT NULL])
       LogicalProject(NAME=[$1])
         LogicalTableScan(table=[[CATALOG, SALES, DEPT]])
     LogicalProject(ENAME=[$1])
       LogicalTableScan(table=[[CATALOG, SALES, EMP]])
-  LogicalProject(FNAME=[CAST($0):VARCHAR(20) CHARACTER SET "ISO-8859-1" COLLATE "ISO-8859-1$en_US$primary" NOT NULL])
+  LogicalProject(FNAME=[CAST($0):VARCHAR(20) NOT NULL])
     LogicalProject(FNAME=[$1])
       LogicalTableScan(table=[[CATALOG, CUSTOMER, CONTACT]])
 ]]>
@@ -163,18 +163,18 @@ LogicalIntersect(all=[false])
   </TestCase>
   <TestCase name="testSubprogram">
     <Resource name="sql">
-      <![CDATA[select upper(ename) from (select lower(ename) as ename from emp)]]>
+      <![CDATA[select upper(ename) from (select lower(ename) as ename from emp where empno = 100)]]>
     </Resource>
     <Resource name="planBefore">
       <![CDATA[
-LogicalProject(EXPR$0=[UPPER($0)])
-  LogicalProject(ENAME=[LOWER($1)])
+LogicalProject(EXPR$0=[UPPER(LOWER($1))])
+  LogicalFilter(condition=[=($0, 100)])
     LogicalTableScan(table=[[CATALOG, SALES, EMP]])
 ]]>
     </Resource>
     <Resource name="planAfter">
       <![CDATA[
-LogicalCalc(expr#0..8=[{inputs}], expr#9=[LOWER($t1)], expr#10=[UPPER($t9)], EXPR$0=[$t10])
+LogicalCalc(expr#0..8=[{inputs}], expr#9=[LOWER($t1)], expr#10=[UPPER($t9)], expr#11=[100], expr#12=[=($t0, $t11)], EXPR$0=[$t10], $condition=[$t12])
   LogicalTableScan(table=[[CATALOG, SALES, EMP]])
 ]]>
     </Resource>

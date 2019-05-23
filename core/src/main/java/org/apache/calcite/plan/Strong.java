@@ -21,10 +21,10 @@ import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
+import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.util.ImmutableBitSet;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 
@@ -87,7 +87,38 @@ public class Strong {
   /** Returns how to deduce whether a particular kind of expression is null,
    * given whether its arguments are null. */
   public static Policy policy(SqlKind kind) {
-    return Preconditions.checkNotNull(MAP.get(kind), kind);
+    return MAP.getOrDefault(kind, Policy.AS_IS);
+  }
+
+  /**
+   * Returns whether a given expression is strong.
+   *
+   * <p>Examples:</p>
+   * <ul>
+   *   <li>Returns true for {@code c = 1} since it returns null if and only if
+   *   c is null
+   *   <li>Returns false for {@code c IS NULL} since it always returns TRUE
+   *   or FALSE
+   *</ul>
+   *
+   * @param e Expression
+   * @return true if the expression is strong, false otherwise
+   */
+  public static boolean isStrong(RexNode e) {
+    final ImmutableBitSet.Builder nullColumns = ImmutableBitSet.builder();
+    e.accept(
+        new RexVisitorImpl<Void>(true) {
+          public Void visitInputRef(RexInputRef inputRef) {
+            nullColumns.set(inputRef.getIndex());
+            return super.visitInputRef(inputRef);
+          }
+        });
+    return isNull(e, nullColumns.build());
+  }
+
+  /** Returns whether all expressions in a list are strong. */
+  public static boolean allStrong(List<RexNode> operands) {
+    return operands.stream().allMatch(Strong::isStrong);
   }
 
   /** Returns whether an expression is definitely not true. */
@@ -106,7 +137,7 @@ public class Strong {
    * expressions, and you may override methods to test hypotheses such as
    * "if {@code x} is null, is {@code x + y} null? */
   public boolean isNull(RexNode node) {
-    final Policy policy = MAP.get(node.getKind());
+    final Policy policy = policy(node.getKind());
     switch (policy) {
     case NOT_NULL:
       return false;
@@ -205,8 +236,6 @@ public class Strong {
     map.put(SqlKind.IS_NOT_TRUE, Policy.NOT_NULL);
     map.put(SqlKind.IS_FALSE, Policy.NOT_NULL);
     map.put(SqlKind.IS_NOT_FALSE, Policy.NOT_NULL);
-    map.put(SqlKind.IS_DISTINCT_FROM, Policy.NOT_NULL);
-    map.put(SqlKind.IS_NOT_DISTINCT_FROM, Policy.NOT_NULL);
 
     map.put(SqlKind.NOT, Policy.ANY);
     map.put(SqlKind.EQUALS, Policy.ANY);
@@ -217,8 +246,6 @@ public class Strong {
     map.put(SqlKind.GREATER_THAN_OR_EQUAL, Policy.ANY);
     map.put(SqlKind.LIKE, Policy.ANY);
     map.put(SqlKind.SIMILAR, Policy.ANY);
-    map.put(SqlKind.PLUS_PREFIX, Policy.ANY);
-    map.put(SqlKind.MINUS_PREFIX, Policy.ANY);
     map.put(SqlKind.PLUS, Policy.ANY);
     map.put(SqlKind.PLUS_PREFIX, Policy.ANY);
     map.put(SqlKind.MINUS, Policy.ANY);

@@ -31,7 +31,6 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.runtime.CalciteException;
-import org.apache.calcite.runtime.PredicateImpl;
 import org.apache.calcite.runtime.Resources;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlOperatorBinding;
@@ -45,12 +44,13 @@ import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
 import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Sets;
 import com.google.common.math.IntMath;
 
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -70,29 +70,25 @@ import java.util.Set;
  * </ul>
  */
 public abstract class Aggregate extends SingleRel {
-  /**
-   * @see org.apache.calcite.util.Bug#CALCITE_461_FIXED
-   */
-  public static final Predicate<Aggregate> IS_SIMPLE =
-      new PredicateImpl<Aggregate>() {
-        public boolean test(Aggregate input) {
-          return input.getGroupType() == Group.SIMPLE;
-        }
-      };
 
-  public static final Predicate<Aggregate> NO_INDICATOR =
-      new PredicateImpl<Aggregate>() {
-        public boolean test(Aggregate input) {
-          return !input.indicator;
-        }
-      };
+  public static boolean isSimple(Aggregate aggregate) {
+    return aggregate.getGroupType() == Group.SIMPLE;
+  }
 
-  public static final Predicate<Aggregate> IS_NOT_GRAND_TOTAL =
-      new PredicateImpl<Aggregate>() {
-        public boolean test(Aggregate input) {
-          return input.getGroupCount() > 0;
-        }
-      };
+  @SuppressWarnings("Guava")
+  @Deprecated // to be converted to Java Predicate before 2.0
+  public static final com.google.common.base.Predicate<Aggregate> IS_SIMPLE =
+      Aggregate::isSimple;
+
+  @SuppressWarnings("Guava")
+  @Deprecated // to be converted to Java Predicate before 2.0
+  public static final com.google.common.base.Predicate<Aggregate> NO_INDICATOR =
+      Aggregate::noIndicator;
+
+  @SuppressWarnings("Guava")
+  @Deprecated // to be converted to Java Predicate before 2.0
+  public static final com.google.common.base.Predicate<Aggregate>
+      IS_NOT_GRAND_TOTAL = Aggregate::isNotGrandTotal;
 
   //~ Instance fields --------------------------------------------------------
 
@@ -146,7 +142,7 @@ public abstract class Aggregate extends SingleRel {
     super(cluster, traits, child);
     this.indicator = indicator; // true is allowed, but discouraged
     this.aggCalls = ImmutableList.copyOf(aggCalls);
-    this.groupSet = Preconditions.checkNotNull(groupSet);
+    this.groupSet = Objects.requireNonNull(groupSet);
     if (groupSets == null) {
       this.groupSets = ImmutableList.of(groupSet);
     } else {
@@ -163,6 +159,14 @@ public abstract class Aggregate extends SingleRel {
           || isPredicate(child, aggCall.filterArg),
           "filter must be BOOLEAN NOT NULL");
     }
+  }
+
+  public static boolean isNotGrandTotal(Aggregate aggregate) {
+    return aggregate.getGroupCount() > 0;
+  }
+
+  public static boolean noIndicator(Aggregate aggregate) {
+    return !aggregate.indicator;
   }
 
   private boolean isPredicate(RelNode input, int index) {
@@ -352,7 +356,7 @@ public abstract class Aggregate extends SingleRel {
     assert groupList.size() == groupSet.cardinality();
     final RelDataTypeFactory.Builder builder = typeFactory.builder();
     final List<RelDataTypeField> fieldList = inputRowType.getFieldList();
-    final Set<String> containedNames = Sets.newHashSet();
+    final Set<String> containedNames = new HashSet<>();
     for (int groupKey : groupList) {
       final RelDataTypeField field = fieldList.get(groupKey);
       containedNames.add(field.getName());
@@ -473,19 +477,68 @@ public abstract class Aggregate extends SingleRel {
       if (groupSets.size() == IntMath.pow(2, groupSet.cardinality())) {
         return CUBE;
       }
-    checkRollup:
-      if (groupSets.size() == groupSet.cardinality() + 1) {
-        ImmutableBitSet g = groupSet;
-        for (ImmutableBitSet bitSet : groupSets) {
-          if (!bitSet.equals(g)) {
-            break checkRollup;
-          }
-          g = g.clear(g.length() - 1);
-        }
-        assert g.isEmpty();
+      if (isRollup(groupSet, groupSets)) {
         return ROLLUP;
       }
       return OTHER;
+    }
+
+    /** Returns whether a list of sets is a rollup.
+     *
+     * <p>For example, if {@code groupSet} is <code>{2, 4, 5}</code>, then
+     * <code>[{2, 4, 5], {2, 5}, {5}, {}]</code> is a rollup. The first item is
+     * equal to {@code groupSet}, and each subsequent item is a subset with one
+     * fewer bit than the previous.
+     *
+     * @see #getRollup(List) */
+    public static boolean isRollup(ImmutableBitSet groupSet,
+        List<ImmutableBitSet> groupSets) {
+      if (groupSets.size() != groupSet.cardinality() + 1) {
+        return false;
+      }
+      ImmutableBitSet g = null;
+      for (ImmutableBitSet bitSet : groupSets) {
+        if (g == null) {
+          // First item must equal groupSet
+          if (!bitSet.equals(groupSet)) {
+            return false;
+          }
+        } else {
+          // Each subsequent items must be a subset with one fewer bit than the
+          // previous item
+          if (!g.contains(bitSet)
+              || g.except(bitSet).cardinality() != 1) {
+            return false;
+          }
+        }
+        g = bitSet;
+      }
+      assert g.isEmpty();
+      return true;
+    }
+
+    /** Returns the ordered list of bits in a rollup.
+     *
+     * <p>For example, given a {@code groupSets} value
+     * <code>[{2, 4, 5], {2, 5}, {5}, {}]</code>, returns the list
+     * {@code [5, 2, 4]}, which are the succession of bits
+     * added to each of the sets starting with the empty set.
+     *
+     * @see #isRollup(ImmutableBitSet, List) */
+    public static List<Integer> getRollup(List<ImmutableBitSet> groupSets) {
+      final Set<Integer> set = new LinkedHashSet<>();
+      ImmutableBitSet g = null;
+      for (ImmutableBitSet bitSet : groupSets) {
+        if (g == null) {
+          // First item must equal groupSet
+        } else {
+          // Each subsequent items must be a subset with one fewer bit than the
+          // previous item
+          set.addAll(g.except(bitSet).toList());
+        }
+        g = bitSet;
+      }
+      return ImmutableList.copyOf(set).reverse();
     }
   }
 

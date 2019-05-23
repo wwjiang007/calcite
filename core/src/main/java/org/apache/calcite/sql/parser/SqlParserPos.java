@@ -18,7 +18,6 @@ package org.apache.calcite.sql.parser;
 
 import org.apache.calcite.sql.SqlNode;
 
-import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
@@ -44,14 +43,10 @@ public class SqlParserPos implements Serializable {
    */
   public static final SqlParserPos ZERO = new SqlParserPos(0, 0);
 
-  private static final long serialVersionUID = 1L;
+  /** Same as {@link #ZERO} but always quoted. **/
+  public static final SqlParserPos QUOTED_ZERO = new QuotedParserPos(0, 0, 0, 0);
 
-  private static final Function<SqlNode, SqlParserPos> NODE_TO_POS =
-      new Function<SqlNode, SqlParserPos>() {
-        public SqlParserPos apply(SqlNode input) {
-          return input.getParserPosition();
-        }
-      };
+  private static final long serialVersionUID = 1L;
 
   //~ Instance fields --------------------------------------------------------
 
@@ -133,6 +128,24 @@ public class SqlParserPos implements Serializable {
     return endColumnNumber;
   }
 
+  /** Returns a {@code SqlParserPos} the same as this but quoted. */
+  public SqlParserPos withQuoting(boolean quoted) {
+    if (isQuoted() == quoted) {
+      return this;
+    } else if (quoted) {
+      return new QuotedParserPos(lineNumber, columnNumber, endLineNumber,
+          endColumnNumber);
+    } else {
+      return new SqlParserPos(lineNumber, columnNumber, endLineNumber,
+          endColumnNumber);
+    }
+  }
+
+  /** @return true if this SqlParserPos is quoted. **/
+  public boolean isQuoted() {
+    return false;
+  }
+
   @Override public String toString() {
     return RESOURCE.parserContext(lineNumber, columnNumber).str();
   }
@@ -190,7 +203,7 @@ public class SqlParserPos implements Serializable {
   }
 
   private static Iterable<SqlParserPos> toPos(Iterable<SqlNode> nodes) {
-    return Iterables.transform(nodes, NODE_TO_POS);
+    return Iterables.transform(nodes, SqlNode::getParserPosition);
   }
 
   /**
@@ -198,7 +211,7 @@ public class SqlParserPos implements Serializable {
    * which spans from the beginning of the first to the end of the last.
    */
   public static SqlParserPos sum(final List<? extends SqlNode> nodes) {
-    return sum(Lists.transform(nodes, NODE_TO_POS));
+    return sum(Lists.transform(nodes, SqlNode::getParserPosition));
   }
 
   /**
@@ -299,6 +312,19 @@ public class SqlParserPos implements Serializable {
   public boolean startsAt(SqlParserPos pos) {
     return lineNumber == pos.lineNumber
         && columnNumber == pos.columnNumber;
+  }
+
+  /** Parser position for an identifier segment that is quoted. */
+  private static class QuotedParserPos extends SqlParserPos {
+    QuotedParserPos(int startLineNumber, int startColumnNumber,
+        int endLineNumber, int endColumnNumber) {
+      super(startLineNumber, startColumnNumber, endLineNumber,
+          endColumnNumber);
+    }
+
+    @Override public boolean isQuoted() {
+      return true;
+    }
   }
 }
 

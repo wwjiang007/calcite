@@ -35,7 +35,6 @@ import org.apache.calcite.rel.core.TableModify.Operation;
 import org.apache.calcite.rel.logical.LogicalTableModify;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
-import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rel.type.RelProtoDataType;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.runtime.ResultSetEnumerable;
@@ -54,8 +53,6 @@ import org.apache.calcite.sql.util.SqlString;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
-import com.google.common.base.Function;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 
 import java.sql.SQLException;
@@ -63,6 +60,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Queryable that gets its data from a table within a JDBC connection.
@@ -77,20 +75,21 @@ import java.util.List;
 public class JdbcTable extends AbstractQueryableTable
     implements TranslatableTable, ScannableTable, ModifiableTable {
   private RelProtoDataType protoRowType;
-  private final JdbcSchema jdbcSchema;
-  private final String jdbcCatalogName;
-  private final String jdbcSchemaName;
-  private final String jdbcTableName;
-  private final Schema.TableType jdbcTableType;
+  public final JdbcSchema jdbcSchema;
+  public final String jdbcCatalogName;
+  public final String jdbcSchemaName;
+  public final String jdbcTableName;
+  public final Schema.TableType jdbcTableType;
 
   JdbcTable(JdbcSchema jdbcSchema, String jdbcCatalogName,
-      String jdbcSchemaName, String tableName, Schema.TableType jdbcTableType) {
+      String jdbcSchemaName, String jdbcTableName,
+      Schema.TableType jdbcTableType) {
     super(Object[].class);
-    this.jdbcSchema = jdbcSchema;
+    this.jdbcSchema = Objects.requireNonNull(jdbcSchema);
     this.jdbcCatalogName = jdbcCatalogName;
     this.jdbcSchemaName = jdbcSchemaName;
-    this.jdbcTableName = tableName;
-    this.jdbcTableType = Preconditions.checkNotNull(jdbcTableType);
+    this.jdbcTableName = Objects.requireNonNull(jdbcTableName);
+    this.jdbcTableType = Objects.requireNonNull(jdbcTableType);
   }
 
   public String toString() {
@@ -121,17 +120,14 @@ public class JdbcTable extends AbstractQueryableTable
   private List<Pair<ColumnMetaData.Rep, Integer>> fieldClasses(
       final JavaTypeFactory typeFactory) {
     final RelDataType rowType = protoRowType.apply(typeFactory);
-    return Lists.transform(rowType.getFieldList(),
-        new Function<RelDataTypeField, Pair<ColumnMetaData.Rep, Integer>>() {
-          public Pair<ColumnMetaData.Rep, Integer> apply(RelDataTypeField f) {
-            final RelDataType type = f.getType();
-            final Class clazz = (Class) typeFactory.getJavaClass(type);
-            final ColumnMetaData.Rep rep =
-                Util.first(ColumnMetaData.Rep.of(clazz),
-                    ColumnMetaData.Rep.OBJECT);
-            return Pair.of(rep, type.getSqlTypeName().getJdbcOrdinal());
-          }
-        });
+    return Lists.transform(rowType.getFieldList(), f -> {
+      final RelDataType type = f.getType();
+      final Class clazz = (Class) typeFactory.getJavaClass(type);
+      final ColumnMetaData.Rep rep =
+          Util.first(ColumnMetaData.Rep.of(clazz),
+              ColumnMetaData.Rep.OBJECT);
+      return Pair.of(rep, type.getSqlTypeName().getJdbcOrdinal());
+    });
   }
 
   SqlString generateSql() {
@@ -147,16 +143,18 @@ public class JdbcTable extends AbstractQueryableTable
     return writer.toSqlString();
   }
 
-  SqlIdentifier tableName() {
-    final List<String> strings = new ArrayList<>();
+  /** Returns the table name, qualified with catalog and schema name if
+   * applicable, as a parse tree node ({@link SqlIdentifier}). */
+  public SqlIdentifier tableName() {
+    final List<String> names = new ArrayList<>(3);
     if (jdbcSchema.catalog != null) {
-      strings.add(jdbcSchema.catalog);
+      names.add(jdbcSchema.catalog);
     }
     if (jdbcSchema.schema != null) {
-      strings.add(jdbcSchema.schema);
+      names.add(jdbcSchema.schema);
     }
-    strings.add(jdbcTableName);
-    return new SqlIdentifier(strings, SqlParserPos.ZERO);
+    names.add(jdbcTableName);
+    return new SqlIdentifier(names, SqlParserPos.ZERO);
   }
 
   public RelNode toRel(RelOptTable.ToRelContext context,

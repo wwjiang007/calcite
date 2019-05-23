@@ -149,19 +149,19 @@ public abstract class Types {
   }
 
   static Class[] toClassArray(Collection<Type> types) {
-    List<Class> classes = new ArrayList<Class>();
+    List<Class> classes = new ArrayList<>();
     for (Type type : types) {
       classes.add(toClass(type));
     }
-    return classes.toArray(new Class[classes.size()]);
+    return classes.toArray(new Class[0]);
   }
 
   static Class[] toClassArray(Iterable<? extends Expression> arguments) {
-    List<Class> classes = new ArrayList<Class>();
+    List<Class> classes = new ArrayList<>();
     for (Expression argument : arguments) {
       classes.add(toClass(argument.getType()));
     }
-    return classes.toArray(new Class[classes.size()]);
+    return classes.toArray(new Class[0]);
   }
 
   /**
@@ -194,30 +194,6 @@ public abstract class Types {
       if (type == null) {
         return oldType;
       }
-    }
-  }
-
-  /**
-   * Boxes a type, if it is primitive, and returns the type name.
-   * The type is abbreviated if it is in the "java.lang" package.
-   *
-   * <p>For example,
-   * boxClassName(int) returns "Integer";
-   * boxClassName(List&lt;String&gt;) returns "List&lt;String&gt;"</p>
-   *
-   * @param type Type
-   *
-   * @return Class name
-   */
-  static String boxClassName(Type type) {
-    if (!(type instanceof Class)) {
-      return type.toString();
-    }
-    Primitive primitive = Primitive.of(type);
-    if (primitive != null) {
-      return primitive.boxClass.getSimpleName();
-    } else {
-      return className(type);
     }
   }
 
@@ -562,7 +538,7 @@ public abstract class Types {
     }
 
     public Type[] getActualTypeArguments() {
-      return typeArguments.toArray(new Type[typeArguments.size()]);
+      return typeArguments.toArray(new Type[0]);
     }
 
     public Type getRawType() {

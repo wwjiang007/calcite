@@ -21,12 +21,14 @@ import org.apache.calcite.avatica.util.ByteString;
 import org.apache.calcite.avatica.util.DateTimeUtils;
 import org.apache.calcite.avatica.util.Spaces;
 import org.apache.calcite.avatica.util.TimeUnitRange;
+import org.apache.calcite.interpreter.Row;
 import org.apache.calcite.linq4j.AbstractEnumerable;
 import org.apache.calcite.linq4j.CartesianProductEnumerator;
 import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.linq4j.Enumerator;
 import org.apache.calcite.linq4j.Linq4j;
 import org.apache.calcite.linq4j.function.Deterministic;
+import org.apache.calcite.linq4j.function.Experimental;
 import org.apache.calcite.linq4j.function.Function1;
 import org.apache.calcite.linq4j.function.NonDeterministic;
 import org.apache.calcite.linq4j.tree.Primitive;
@@ -35,7 +37,13 @@ import org.apache.calcite.util.Bug;
 import org.apache.calcite.util.NumberUtil;
 import org.apache.calcite.util.TimeWithTimeZoneString;
 import org.apache.calcite.util.TimestampWithTimeZoneString;
+import org.apache.calcite.util.Util;
 
+import org.apache.commons.codec.language.Soundex;
+
+import com.google.common.base.Strings;
+
+import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.MathContext;
@@ -59,6 +67,8 @@ import java.util.TimeZone;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
+import static org.apache.calcite.util.Static.RESOURCE;
+
 /**
  * Helper methods to implement SQL functions in generated code.
  *
@@ -78,32 +88,25 @@ public class SqlFunctions {
 
   private static final TimeZone LOCAL_TZ = TimeZone.getDefault();
 
+  private static final Soundex SOUNDEX = new Soundex();
+
+  private static final int SOUNDEX_LENGTH = 4;
+
   private static final Function1<List<Object>, Enumerable<Object>> LIST_AS_ENUMERABLE =
-      new Function1<List<Object>, Enumerable<Object>>() {
-        public Enumerable<Object> apply(List<Object> list) {
-          return Linq4j.asEnumerable(list);
-        }
-      };
+      Linq4j::asEnumerable;
 
   private static final Function1<Object[], Enumerable<Object[]>> ARRAY_CARTESIAN_PRODUCT =
-      new Function1<Object[], Enumerable<Object[]>>() {
-        public Enumerable<Object[]> apply(Object[] lists) {
-          final List<Enumerator<Object>> enumerators = new ArrayList<>();
-          for (Object list : lists) {
-            enumerators.add(Linq4j.enumerator((List) list));
-          }
-          final Enumerator<List<Object>> product = Linq4j.product(enumerators);
-          return new AbstractEnumerable<Object[]>() {
-            public Enumerator<Object[]> enumerator() {
-              return Linq4j.transform(product,
-                  new Function1<List<Object>, Object[]>() {
-                    public Object[] apply(List<Object> list) {
-                      return list.toArray();
-                    }
-                  });
-            }
-          };
+      lists -> {
+        final List<Enumerator<Object>> enumerators = new ArrayList<>();
+        for (Object list : lists) {
+          enumerators.add(Linq4j.enumerator((List) list));
         }
+        final Enumerator<List<Object>> product = Linq4j.product(enumerators);
+        return new AbstractEnumerable<Object[]>() {
+          public Enumerator<Object[]> enumerator() {
+            return Linq4j.transform(product, List::toArray);
+          }
+        };
       };
 
   /** Holds, for each thread, a map from sequence name to sequence current
@@ -113,33 +116,55 @@ public class SqlFunctions {
    * that sequences can be parsed, validated and planned. A real application
    * will want persistent values for sequences, shared among threads. */
   private static final ThreadLocal<Map<String, AtomicLong>> THREAD_SEQUENCES =
-      new ThreadLocal<Map<String, AtomicLong>>() {
-        @Override protected Map<String, AtomicLong> initialValue() {
-          return new HashMap<String, AtomicLong>();
-        }
-      };
+      ThreadLocal.withInitial(HashMap::new);
 
   private SqlFunctions() {
   }
 
   /** SQL SUBSTRING(string FROM ... FOR ...) function. */
-  public static String substring(String s, int from, int for_) {
-    return s.substring(from - 1, Math.min(from - 1 + for_, s.length()));
+  public static String substring(String c, int s, int l) {
+    int lc = c.length();
+    if (s < 0) {
+      s += lc + 1;
+    }
+    int e = s + l;
+    if (e < s) {
+      throw RESOURCE.illegalNegativeSubstringLength().ex();
+    }
+    if (s > lc || e < 1) {
+      return "";
+    }
+    int s1 = Math.max(s, 1);
+    int e1 = Math.min(e, lc + 1);
+    return c.substring(s1 - 1, e1 - 1);
   }
 
   /** SQL SUBSTRING(string FROM ...) function. */
-  public static String substring(String s, int from) {
-    return s.substring(from - 1);
+  public static String substring(String c, int s) {
+    return substring(c, s, c.length() + 1);
   }
 
   /** SQL SUBSTRING(binary FROM ... FOR ...) function. */
-  public static ByteString substring(ByteString b, int from, int for_) {
-    return b.substring(from - 1, Math.min(from - 1 + for_, b.length()));
+  public static ByteString substring(ByteString c, int s, int l) {
+    int lc = c.length();
+    if (s < 0) {
+      s += lc + 1;
+    }
+    int e = s + l;
+    if (e < s) {
+      throw RESOURCE.illegalNegativeSubstringLength().ex();
+    }
+    if (s > lc || e < 1) {
+      return ByteString.EMPTY;
+    }
+    int s1 = Math.max(s, 1);
+    int e1 = Math.min(e, lc + 1);
+    return c.substring(s1 - 1, e1 - 1);
   }
 
   /** SQL SUBSTRING(binary FROM ...) function. */
-  public static ByteString substring(ByteString b, int from) {
-    return b.substring(from - 1);
+  public static ByteString substring(ByteString c, int s) {
+    return substring(c, s, c.length() + 1);
   }
 
   /** SQL UPPER(string) function. */
@@ -189,6 +214,48 @@ public class SqlFunctions {
     return newS.toString();
   }
 
+  /** SQL REVERSE(string) function. */
+  public static String reverse(String s) {
+    final StringBuilder buf = new StringBuilder(s);
+    return buf.reverse().toString();
+  }
+
+  /** SQL ASCII(string) function. */
+  public static int ascii(String s) {
+    return s.isEmpty()
+        ? 0 : s.codePointAt(0);
+  }
+
+  /** SQL REPEAT(string, int) function. */
+  public static String repeat(String s, int n) {
+    if (n < 1) {
+      return "";
+    }
+    return Strings.repeat(s, n);
+  }
+
+  /** SQL SPACE(int) function. */
+  public static String space(int n) {
+    return repeat(" ", n);
+  }
+
+  /** SQL SOUNDEX(string) function. */
+  public static String soundex(String s) {
+    return SOUNDEX.soundex(s);
+  }
+
+  /** SQL DIFFERENCE(string, string) function. */
+  public static int difference(String s0, String s1) {
+    String result0 = soundex(s0);
+    String result1 = soundex(s1);
+    for (int i = 0; i < SOUNDEX_LENGTH; i++) {
+      if (result0.charAt(i) != result1.charAt(i)) {
+        return i;
+      }
+    }
+    return SOUNDEX_LENGTH;
+  }
+
   /** SQL CHARACTER_LENGTH(string) function. */
   public static int charLength(String s) {
     return s.length();
@@ -206,29 +273,32 @@ public class SqlFunctions {
 
   /** SQL {@code RTRIM} function applied to string. */
   public static String rtrim(String s) {
-    return trim_(s, false, true, ' ');
+    return trim(false, true, " ", s);
   }
 
   /** SQL {@code LTRIM} function. */
   public static String ltrim(String s) {
-    return trim_(s, true, false, ' ');
+    return trim(true, false, " ", s);
   }
 
   /** SQL {@code TRIM(... seek FROM s)} function. */
-  public static String trim(boolean leading, boolean trailing, String seek,
+  public static String trim(boolean left, boolean right, String seek,
       String s) {
-    return trim_(s, leading, trailing, seek.charAt(0));
+    return trim(left, right, seek, s, true);
   }
 
-  /** SQL {@code TRIM} function. */
-  private static String trim_(String s, boolean left, boolean right, char c) {
+  public static String trim(boolean left, boolean right, String seek,
+      String s, boolean strict) {
+    if (strict && seek.length() != 1) {
+      throw RESOURCE.trimError().ex();
+    }
     int j = s.length();
     if (right) {
       for (;;) {
         if (j == 0) {
           return "";
         }
-        if (s.charAt(j - 1) != c) {
+        if (seek.indexOf(s.charAt(j - 1)) < 0) {
           break;
         }
         --j;
@@ -240,7 +310,7 @@ public class SqlFunctions {
         if (i == j) {
           return "";
         }
-        if (s.charAt(i) != c) {
+        if (seek.indexOf(s.charAt(i)) < 0) {
           break;
         }
         ++i;
@@ -795,16 +865,30 @@ public class SqlFunctions {
     throw notArithmetic("*", b0, b1);
   }
 
-  private static IllegalArgumentException notArithmetic(String op, Object b0,
+  private static RuntimeException notArithmetic(String op, Object b0,
       Object b1) {
-    return new IllegalArgumentException("Invalid types for arithmetic: "
-        + b0.getClass() + " " + op + " " + b1.getClass());
+    return RESOURCE.invalidTypesForArithmetic(b0.getClass().toString(),
+        op, b1.getClass().toString()).ex();
   }
 
-  private static IllegalArgumentException notComparable(String op, Object b0,
+  private static RuntimeException notComparable(String op, Object b0,
       Object b1) {
-    return new IllegalArgumentException("Invalid types for comparison: "
-        + b0.getClass() + " " + op + " " + b1.getClass());
+    return RESOURCE.invalidTypesForComparison(b0.getClass().toString(),
+        op, b1.getClass().toString()).ex();
+  }
+
+  // &
+
+  /** Helper function for implementing <code>BIT_AND</code> */
+  public static long bitAnd(long b0, long b1) {
+    return b0 & b1;
+  }
+
+  // |
+
+  /** Helper function for implementing <code>BIT_OR</code> */
+  public static long bitOr(long b0, long b1) {
+    return b0 | b1;
   }
 
   // EXP
@@ -818,10 +902,6 @@ public class SqlFunctions {
     return Math.exp(b0.doubleValue());
   }
 
-  public static double exp(long b0) {
-    return Math.exp(b0);
-  }
-
   // POWER
 
   /** SQL <code>POWER</code> operator applied to double values. */
@@ -833,16 +913,12 @@ public class SqlFunctions {
     return Math.pow(b0, b1.doubleValue());
   }
 
-  public static double power(long b0, long b1) {
-    return Math.pow(b0, b1);
+  public static double power(BigDecimal b0, double b1) {
+    return Math.pow(b0.doubleValue(), b1);
   }
 
   public static double power(BigDecimal b0, BigDecimal b1) {
     return Math.pow(b0.doubleValue(), b1.doubleValue());
-  }
-
-  public static double power(long b0, BigDecimal b1) {
-    return Math.pow(b0, b1.doubleValue());
   }
 
   // LN
@@ -850,11 +926,6 @@ public class SqlFunctions {
   /** SQL {@code LN(number)} function applied to double values. */
   public static double ln(double d) {
     return Math.log(d);
-  }
-
-  /** SQL {@code LN(number)} function applied to long values. */
-  public static double ln(long b0) {
-    return Math.log(b0);
   }
 
   /** SQL {@code LN(number)} function applied to BigDecimal values. */
@@ -866,11 +937,6 @@ public class SqlFunctions {
 
   /** SQL <code>LOG10(numeric)</code> operator applied to double values. */
   public static double log10(double b0) {
-    return Math.log10(b0);
-  }
-
-  /** SQL {@code LOG10(number)} function applied to long values. */
-  public static double log10(long b0) {
     return Math.log10(b0);
   }
 
@@ -1072,11 +1138,6 @@ public class SqlFunctions {
   }
 
   // ACOS
-  /** SQL <code>ACOS</code> operator applied to long values. */
-  public static double acos(long b0) {
-    return Math.acos(b0);
-  }
-
   /** SQL <code>ACOS</code> operator applied to BigDecimal values. */
   public static double acos(BigDecimal b0) {
     return Math.acos(b0.doubleValue());
@@ -1088,11 +1149,6 @@ public class SqlFunctions {
   }
 
   // ASIN
-  /** SQL <code>ASIN</code> operator applied to long values. */
-  public static double asin(long b0) {
-    return Math.asin(b0);
-  }
-
   /** SQL <code>ASIN</code> operator applied to BigDecimal values. */
   public static double asin(BigDecimal b0) {
     return Math.asin(b0.doubleValue());
@@ -1104,11 +1160,6 @@ public class SqlFunctions {
   }
 
   // ATAN
-  /** SQL <code>ATAN</code> operator applied to long values. */
-  public static double atan(long b0) {
-    return Math.atan(b0);
-  }
-
   /** SQL <code>ATAN</code> operator applied to BigDecimal values. */
   public static double atan(BigDecimal b0) {
     return Math.atan(b0.doubleValue());
@@ -1120,14 +1171,14 @@ public class SqlFunctions {
   }
 
   // ATAN2
-  /** SQL <code>ATAN2</code> operator applied to long values. */
-  public static double atan2(long b0, long b1) {
-    return Math.atan2(b0, b1);
+  /** SQL <code>ATAN2</code> operator applied to double/BigDecimal values. */
+  public static double atan2(double b0, BigDecimal b1) {
+    return Math.atan2(b0, b1.doubleValue());
   }
 
-  /** SQL <code>ATAN2</code> operator applied to long/BigDecimal values. */
-  public static double atan2(long b0, BigDecimal b1) {
-    return Math.atan2(b0, b1.doubleValue());
+  /** SQL <code>ATAN2</code> operator applied to BigDecimal/double values. */
+  public static double atan2(BigDecimal b0, double b1) {
+    return Math.atan2(b0.doubleValue(), b1);
   }
 
   /** SQL <code>ATAN2</code> operator applied to BigDecimal values. */
@@ -1141,11 +1192,6 @@ public class SqlFunctions {
   }
 
   // COS
-  /** SQL <code>COS</code> operator applied to long values. */
-  public static double cos(long b0) {
-    return Math.cos(b0);
-  }
-
   /** SQL <code>COS</code> operator applied to BigDecimal values. */
   public static double cos(BigDecimal b0) {
     return Math.cos(b0.doubleValue());
@@ -1157,11 +1203,6 @@ public class SqlFunctions {
   }
 
   // COT
-  /** SQL <code>COT</code> operator applied to long values. */
-  public static double cot(long b0) {
-    return 1.0d / Math.tan(b0);
-  }
-
   /** SQL <code>COT</code> operator applied to BigDecimal values. */
   public static double cot(BigDecimal b0) {
     return 1.0d / Math.tan(b0.doubleValue());
@@ -1173,11 +1214,6 @@ public class SqlFunctions {
   }
 
   // DEGREES
-  /** SQL <code>DEGREES</code> operator applied to long values. */
-  public static double degrees(long b0) {
-    return Math.toDegrees(b0);
-  }
-
   /** SQL <code>DEGREES</code> operator applied to BigDecimal values. */
   public static double degrees(BigDecimal b0) {
     return Math.toDegrees(b0.doubleValue());
@@ -1189,11 +1225,6 @@ public class SqlFunctions {
   }
 
   // RADIANS
-  /** SQL <code>RADIANS</code> operator applied to long values. */
-  public static double radians(long b0) {
-    return Math.toRadians(b0);
-  }
-
   /** SQL <code>RADIANS</code> operator applied to BigDecimal values. */
   public static double radians(BigDecimal b0) {
     return Math.toRadians(b0.doubleValue());
@@ -1306,11 +1337,6 @@ public class SqlFunctions {
   }
 
   // SIN
-  /** SQL <code>SIN</code> operator applied to long values. */
-  public static double sin(long b0) {
-    return Math.sin(b0);
-  }
-
   /** SQL <code>SIN</code> operator applied to BigDecimal values. */
   public static double sin(BigDecimal b0) {
     return Math.sin(b0.doubleValue());
@@ -1322,11 +1348,6 @@ public class SqlFunctions {
   }
 
   // TAN
-  /** SQL <code>TAN</code> operator applied to long values. */
-  public static double tan(long b0) {
-    return Math.tan(b0);
-  }
-
   /** SQL <code>TAN</code> operator applied to BigDecimal values. */
   public static double tan(BigDecimal b0) {
     return Math.tan(b0.doubleValue());
@@ -1472,18 +1493,18 @@ public class SqlFunctions {
 
   @NonDeterministic
   private static Object cannotConvert(Object o, Class toType) {
-    throw new RuntimeException("Cannot convert " + o + " to " + toType);
+    throw RESOURCE.cannotConvert(o.toString(), toType.toString()).ex();
   }
 
   /** CAST(VARCHAR AS BOOLEAN). */
   public static boolean toBoolean(String s) {
-    s = trim_(s, true, true, ' ');
+    s = trim(true, true, " ", s);
     if (s.equalsIgnoreCase("TRUE")) {
       return true;
     } else if (s.equalsIgnoreCase("FALSE")) {
       return false;
     } else {
-      throw new RuntimeException("Invalid character for cast");
+      throw RESOURCE.invalidCharacterForCast(s).ex();
     }
   }
 
@@ -1922,6 +1943,33 @@ public class SqlFunctions {
     return v - remainder;
   }
 
+  /**
+   * SQL {@code LAST_DAY} function.
+   *
+   * @param date days since epoch
+   * @return days of the last day of the month since epoch
+   */
+  public static int lastDay(int date) {
+    int y0 = (int) DateTimeUtils.unixDateExtract(TimeUnitRange.YEAR, date);
+    int m0 = (int) DateTimeUtils.unixDateExtract(TimeUnitRange.MONTH, date);
+    int last = lastDay(y0, m0);
+    return DateTimeUtils.ymdToUnixDate(y0, m0, last);
+  }
+
+  /**
+   * SQL {@code LAST_DAY} function.
+   *
+   * @param timestamp milliseconds from epoch
+   * @return milliseconds of the last day of the month since epoch
+   */
+  public static int lastDay(long timestamp) {
+    int date = (int) (timestamp / DateTimeUtils.MILLIS_PER_DAY);
+    int y0 = (int) DateTimeUtils.unixDateExtract(TimeUnitRange.YEAR, date);
+    int m0 = (int) DateTimeUtils.unixDateExtract(TimeUnitRange.MONTH, date);
+    int last = lastDay(y0, m0);
+    return DateTimeUtils.ymdToUnixDate(y0, m0, last);
+  }
+
   /** SQL {@code CURRENT_TIMESTAMP} function. */
   @NonDeterministic
   public static long currentTimestamp(DataContext root) {
@@ -2066,7 +2114,7 @@ public class SqlFunctions {
     try {
       return Primitive.asList(a.getArray());
     } catch (SQLException e) {
-      throw new RuntimeException(e);
+      throw Util.toUnchecked(e);
     }
   }
 
@@ -2094,7 +2142,11 @@ public class SqlFunctions {
 
   /** Support the SLICE function. */
   public static List slice(List list) {
-    return list;
+    List result = new ArrayList(list.size());
+    for (Object e : list) {
+      result.add(structAccess(e, 0, null));
+    }
+    return result;
   }
 
   /** Support the ELEMENT function. */
@@ -2105,7 +2157,7 @@ public class SqlFunctions {
     case 1:
       return list.get(0);
     default:
-      throw new RuntimeException("more than one value");
+      throw RESOURCE.moreThanOneValueInList(list.toString()).ex();
     }
   }
 
@@ -2117,9 +2169,9 @@ public class SqlFunctions {
   /** Support the MULTISET INTERSECT DISTINCT function. */
   public static <E> Collection<E> multisetIntersectDistinct(Collection<E> c1,
       Collection<E> c2) {
-    final Set<E> result = new HashSet<E>(c1);
+    final Set<E> result = new HashSet<>(c1);
     result.retainAll(c2);
-    return new ArrayList<E>(result);
+    return new ArrayList<>(result);
   }
 
   /** Support the MULTISET INTERSECT ALL function. */
@@ -2212,20 +2264,12 @@ public class SqlFunctions {
         //noinspection unchecked
         return (Function1) LIST_AS_ENUMERABLE;
       } else {
-        return new Function1<Object, Enumerable<ComparableList<Comparable>>>() {
-          public Enumerable<ComparableList<Comparable>> apply(Object row) {
-            return p2(new Object[] { row }, fieldCounts, withOrdinality,
-                  inputTypes);
-          }
-        };
+        return row -> p2(new Object[] { row }, fieldCounts, withOrdinality,
+              inputTypes);
       }
     }
-    return new Function1<Object, Enumerable<FlatLists.ComparableList<Comparable>>>() {
-      public Enumerable<FlatLists.ComparableList<Comparable>> apply(Object lists) {
-        return p2((Object[]) lists, fieldCounts, withOrdinality,
-            inputTypes);
-      }
-    };
+    return lists -> p2((Object[]) lists, fieldCounts, withOrdinality,
+        inputTypes);
   }
 
   private static Enumerable<FlatLists.ComparableList<Comparable>> p2(
@@ -2243,12 +2287,7 @@ public class SqlFunctions {
             (List<Comparable>) inputObject;
         enumerators.add(
             Linq4j.transform(
-                Linq4j.enumerator(list),
-                new Function1<Comparable, List<Comparable>>() {
-                  public List<Comparable> apply(Comparable a0) {
-                    return FlatLists.of(a0);
-                  }
-                }));
+                Linq4j.enumerator(list), FlatLists::of));
         break;
       case LIST:
         @SuppressWarnings("unchecked") List<List<Comparable>> listList =
@@ -2262,11 +2301,7 @@ public class SqlFunctions {
             Linq4j.enumerator(map.entrySet());
 
         Enumerator<List<Comparable>> transformed = Linq4j.transform(enumerator,
-            new Function1<Entry<Comparable, Comparable>, List<Comparable>>() {
-              public List<Comparable> apply(Entry<Comparable, Comparable> e) {
-                return FlatLists.of(e.getKey(), e.getValue());
-              }
-            });
+            e -> FlatLists.of(e.getKey(), e.getValue()));
         enumerators.add(transformed);
         break;
       default:
@@ -2382,6 +2417,37 @@ public class SqlFunctions {
       --x;
     }
     return x;
+  }
+
+  /**
+   * Implements the {@code .} (field access) operator on an object
+   * whose type is not known until runtime.
+   *
+   * <p>A struct object can be represented in various ways by the
+   * runtime and depends on the
+   * {@link org.apache.calcite.adapter.enumerable.JavaRowFormat}.
+   */
+  @Experimental
+  public static Object structAccess(Object structObject, int index, String fieldName) {
+    if (structObject == null) {
+      return null;
+    }
+
+    if (structObject instanceof Object[]) {
+      return ((Object[]) structObject)[index];
+    } else if (structObject instanceof List) {
+      return ((List) structObject).get(index);
+    } else if (structObject instanceof Row) {
+      return ((Row) structObject).getObject(index);
+    } else {
+      Class<?> beanClass = structObject.getClass();
+      try {
+        Field structField = beanClass.getDeclaredField(fieldName);
+        return structField.get(structObject);
+      } catch (NoSuchFieldException | IllegalAccessException ex) {
+        throw RESOURCE.failedToAccessField(fieldName, beanClass.getName()).ex(ex);
+      }
+    }
   }
 
   /** Enumerates over the cartesian product of the given lists, returning

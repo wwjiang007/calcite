@@ -15,6 +15,7 @@
 #
 # Database of contributors to Apache Calcite.
 # Pages such as developer.md use this data.
+# List must be sorted by first name, last name.
 #
 - name: Alan Gates
   emeritus: 2018/05/04
@@ -27,6 +28,11 @@
   githubId: amansinha100
   org: MapR
   role: PMC
+- name: Andrei Sereda
+  apacheId: sereda
+  githubId: asereda-gs
+  org:
+  role: Committer
 - name: Ashutosh Chauhan
   apacheId: hashutosh
   githubId: ashutoshc
@@ -42,6 +48,16 @@
   githubId: beikov
   org: Blazebit
   role: Committer
+- name: Chunwei Lei
+  apacheId: chunwei
+  githubId: chunweilei
+  org: Alibaba
+  role: Committer
+- name: Danny Chan
+  apacheId: danny0405
+  githubId: danny0405
+  org: Alibaba
+  role: Committer
 - name: Edmon Begoli
   apacheId: ebegoli
   githubId: ebegoli
@@ -51,11 +67,21 @@
   apacheId: francischuang
   githubId: F21
   org: Boostport
-  role: PMC
+  role: PMC Chair
 - name: Gian Merlino
   apacheId: gian
   githubId: gianm
   org: Imply
+  role: Committer
+- name: Haisheng Yuan
+  apacheId: hyuan
+  githubId: hsyuan
+  org: Alibaba
+  role: Committer
+- name: Hongze Zhang
+  apacheId: hongze
+  githubId: zhztheplayer
+  org: Tencent
   role: Committer
 - name: James R. Taylor
   apacheId: jamestaylor
@@ -95,7 +121,7 @@
 - name: Julian Hyde
   apacheId: jhyde
   githubId: julianhyde
-  org: Hortonworks
+  org: Looker
   role: PMC
   homepage: http://people.apache.org/~jhyde
 - name: Kevin Liew
@@ -107,7 +133,7 @@
   apacheId: krisden
   githubId: risdenk
   org:
-  role: Committer
+  role: PMC
 - name: Laurent Goujon
   apacheId: laurent
   githubId: laurentgo
@@ -121,9 +147,9 @@
 - name: Michael Mior
   apacheId: mmior
   githubId: michaelmior
-  org: University of Waterloo
-  role: PMC Chair
-  homepage: http://michael.mior.ca/
+  org: Rochester Institute of Technology
+  role: PMC
+  homepage: https://michael.mior.ca/
 - name: Milinda Pathirage
   apacheId: milinda
   githubId: milinda
@@ -146,6 +172,16 @@
   githubId: nishantmonu51
   org: Hortonworks
   role: Committer
+- name: Ruben Quesada Lopez
+  apacheId: rubenql
+  githubId: rubenada
+  org: TIBCO
+  role: Committer
+- name: Sergey Nuyanzin
+  apacheId: snuyanzin
+  githubId: snuyanzin
+  org: EPAM
+  role: Committer
 - name: Shuyi Chen
   apacheId: shuyichen
   githubId: suez1224
@@ -156,6 +192,11 @@
   githubId: b-slim
   org: Hortonworks
   role: Committer
+- name: Stamatis Zampetakis
+  apacheId: zabetak
+  githubId: zabetak
+  org: TIBCO
+  role: PMC
 - name: Steven Noels
   apacheId: stevenn
   githubId: stevenn
@@ -176,7 +217,7 @@
   apacheId: volodymyr
   githubId: vvysotskyi
   org:
-  role: Committer
+  role: PMC
 - name: Zhen Wang
   apacheId: zhenw
   githubId: zinking
@@ -186,5 +227,15 @@
   apacheId: zhiqianghe
   githubId: Zhiqiang-He
   org: Huawei
+  role: Committer
+- name: Zhiwei Peng
+  apacheId: zhiwei
+  githubId: pengzhiwei2018
+  org: Ant Financial Group
+  role: Committer
+- name: Zoltan Haindrich
+  apacheId: kgyrtkirk
+  githubId: kgyrtkirk
+  org: Hortonworks
   role: Committer
 # End contributors.yml

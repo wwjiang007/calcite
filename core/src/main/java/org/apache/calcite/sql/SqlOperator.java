@@ -296,7 +296,7 @@ public abstract class SqlOperator {
     return createCall(
         null,
         pos,
-        operandList.toArray(new SqlNode[operandList.size()]));
+        operandList.toArray(new SqlNode[0]));
   }
 
   /**
@@ -365,8 +365,8 @@ public abstract class SqlOperator {
     return name.equals(other.name) && kind == other.kind;
   }
 
-  public boolean isName(String testName) {
-    return name.equals(testName);
+  public boolean isName(String testName, boolean caseSensitive) {
+    return caseSensitive ? name.equals(testName) : name.equalsIgnoreCase(testName);
   }
 
   @Override public int hashCode() {
@@ -467,7 +467,13 @@ public abstract class SqlOperator {
   public RelDataType inferReturnType(
       SqlOperatorBinding opBinding) {
     if (returnTypeInference != null) {
-      return returnTypeInference.inferReturnType(opBinding);
+      RelDataType returnType = returnTypeInference.inferReturnType(opBinding);
+      if (returnType == null) {
+        throw new IllegalArgumentException("Cannot infer return type for "
+            + opBinding.getOperator() + "; operand types: "
+            + opBinding.collectOperandTypes());
+      }
+      return returnType;
     }
 
     // Derived type should have overridden this method, since it didn't
@@ -503,7 +509,8 @@ public abstract class SqlOperator {
 
     final SqlOperator sqlOperator =
         SqlUtil.lookupRoutine(validator.getOperatorTable(), getNameAsId(),
-            argTypes, null, null, getSyntax(), getKind());
+            argTypes, null, null, getSyntax(), getKind(),
+            validator.getCatalogReader().nameMatcher());
 
     ((SqlBasicCall) call).setOperator(sqlOperator);
     RelDataType type = call.getOperator().validateOperands(validator, scope, call);

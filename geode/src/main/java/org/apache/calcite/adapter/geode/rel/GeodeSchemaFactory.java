@@ -24,7 +24,10 @@ import org.apache.calcite.schema.SchemaPlus;
 
 import com.google.common.collect.ImmutableList;
 
+import java.util.Arrays;
 import java.util.Map;
+
+import static org.apache.calcite.adapter.geode.util.GeodeUtils.createClientCache;
 
 /**
  * Factory that creates a {@link GeodeSchema}.
@@ -57,12 +60,13 @@ public class GeodeSchemaFactory implements SchemaFactory {
     }
 
     if (allowSpatialFunctions) {
-      ModelHandler.addFunctions(parentSchema, null, ImmutableList.<String>of(),
+      ModelHandler.addFunctions(parentSchema, null, ImmutableList.of(),
           GeoFunctions.class.getName(), "*", true);
     }
 
-    return new GeodeSchema(locatorHost, locatorPort, regionNames,
-        pbxSerializablePackagePath, parentSchema);
+    return new GeodeSchema(
+        createClientCache(locatorHost, locatorPort, pbxSerializablePackagePath, true),
+        Arrays.asList(regionNames));
   }
 }
 

@@ -21,6 +21,7 @@ import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.plan.RelOptRuleOperand;
 import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.plan.Strong;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
@@ -171,6 +172,18 @@ public class JoinProjectTransposeRule extends RelOptRule {
       return;
     }
 
+    if (includeOuter) {
+      if (leftProj != null && joinType.generatesNullsOnLeft()
+          && !Strong.allStrong(leftProj.getProjects())) {
+        return;
+      }
+
+      if (rightProj != null && joinType.generatesNullsOnRight()
+          && !Strong.allStrong(rightProj.getProjects())) {
+        return;
+      }
+    }
+
     // Construct two RexPrograms and combine them.  The bottom program
     // is a join of the projection expressions from the left and/or
     // right projects that feed into the join.  The top program contains
@@ -187,7 +200,7 @@ public class JoinProjectTransposeRule extends RelOptRule {
             JoinRelType.INNER,
             joinRel.getCluster().getTypeFactory(),
             null,
-            Collections.<RelDataTypeField>emptyList());
+            Collections.emptyList());
 
     // Create projection expressions, combining the projection expressions
     // from the projects that feed into the join.  For the RHS projection

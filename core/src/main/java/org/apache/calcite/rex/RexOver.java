@@ -25,6 +25,8 @@ import org.apache.calcite.util.Util;
 import com.google.common.base.Preconditions;
 
 import java.util.List;
+import java.util.Objects;
+import javax.annotation.Nonnull;
 
 /**
  * Call to an aggregate function over a window.
@@ -36,6 +38,7 @@ public class RexOver extends RexCall {
 
   private final RexWindow window;
   private final boolean distinct;
+  private final boolean ignoreNulls;
 
   //~ Constructors -----------------------------------------------------------
 
@@ -63,11 +66,13 @@ public class RexOver extends RexCall {
       SqlAggFunction op,
       List<RexNode> operands,
       RexWindow window,
-      boolean distinct) {
+      boolean distinct,
+      boolean ignoreNulls) {
     super(type, op, operands);
     Preconditions.checkArgument(op.isAggregator());
-    this.window = Preconditions.checkNotNull(window);
+    this.window = Objects.requireNonNull(window);
     this.distinct = distinct;
+    this.ignoreNulls = ignoreNulls;
   }
 
   //~ Methods ----------------------------------------------------------------
@@ -87,20 +92,21 @@ public class RexOver extends RexCall {
     return distinct;
   }
 
-  @Override protected String computeDigest(boolean withType) {
+  public boolean ignoreNulls() {
+    return ignoreNulls;
+  }
+
+  @Override protected @Nonnull String computeDigest(boolean withType) {
     final StringBuilder sb = new StringBuilder(op.getName());
     sb.append("(");
     if (distinct) {
       sb.append("DISTINCT ");
     }
-    for (int i = 0; i < operands.size(); i++) {
-      if (i > 0) {
-        sb.append(", ");
-      }
-      RexNode operand = operands.get(i);
-      sb.append(operand.toString());
-    }
+    appendOperands(sb);
     sb.append(")");
+    if (ignoreNulls) {
+      sb.append(" IGNORE NULLS");
+    }
     if (withType) {
       sb.append(":");
       sb.append(type.getFullTypeString());

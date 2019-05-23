@@ -18,6 +18,7 @@ package org.apache.calcite.util;
 
 import org.apache.calcite.avatica.util.DateTimeUtils;
 import org.apache.calcite.avatica.util.Spaces;
+import org.apache.calcite.config.CalciteSystemProperty;
 import org.apache.calcite.linq4j.Ord;
 import org.apache.calcite.runtime.CalciteException;
 import org.apache.calcite.sql.SqlAggFunction;
@@ -29,7 +30,6 @@ import org.apache.calcite.sql.SqlValuesOperator;
 import org.apache.calcite.sql.fun.SqlRowOperator;
 import org.apache.calcite.sql.util.SqlBasicVisitor;
 
-import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.cache.CacheBuilder;
@@ -91,16 +91,17 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.RandomAccess;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.TimeZone;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.jar.JarFile;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collector;
-import javax.annotation.Nullable;
-
-import static com.google.common.base.Preconditions.checkNotNull;
+import javax.annotation.Nonnull;
 
 /**
  * Miscellaneous utility functions.
@@ -141,22 +142,17 @@ public class Util {
       Pattern.compile("[a-zA-Z_$][a-zA-Z0-9$]*");
 
   private static final Charset DEFAULT_CHARSET =
-      Charset.forName(SaffronProperties.INSTANCE.defaultCharset().get());
+      Charset.forName(CalciteSystemProperty.DEFAULT_CHARSET.value());
 
   /**
    * Maps classes to the map of their enum values. Uses a weak map so that
    * classes are not prevented from being unloaded.
    */
+  @SuppressWarnings("unchecked")
   private static final LoadingCache<Class, Map<String, Enum>> ENUM_CONSTANTS =
       CacheBuilder.newBuilder()
           .weakKeys()
-          .build(
-              new CacheLoader<Class, Map<String, Enum>>() {
-                @Override public Map<String, Enum> load(Class clazz) {
-                  //noinspection unchecked
-                  return enumConstants(clazz);
-                }
-              });
+          .build(CacheLoader.from(Util::enumConstants));
 
   //~ Methods ----------------------------------------------------------------
   /**
@@ -483,24 +479,33 @@ public class Util {
    * Prints a string, enclosing in double quotes (") and escaping if
    * necessary. For examples, <code>printDoubleQuoted(w,"x\"y",false)</code>
    * prints <code>"x\"y"</code>.
+   *
+   * <p>The appendable where the value is printed must not incur I/O operations. This method is
+   * not meant to be used for writing the values to permanent storage.</p>
+   *
+   * @throws IllegalStateException if the print to the specified appendable fails due to I/O
    */
   public static void printJavaString(
-      PrintWriter pw,
+      Appendable appendable,
       String s,
       boolean nullMeansNull) {
-    if (s == null) {
-      if (nullMeansNull) {
-        pw.print("null");
+    try {
+      if (s == null) {
+        if (nullMeansNull) {
+          appendable.append("null");
+        }
+      } else {
+        String s1 = replace(s, "\\", "\\\\");
+        String s2 = replace(s1, "\"", "\\\"");
+        String s3 = replace(s2, "\n\r", "\\n");
+        String s4 = replace(s3, "\n", "\\n");
+        String s5 = replace(s4, "\r", "\\r");
+        appendable.append('"');
+        appendable.append(s5);
+        appendable.append('"');
       }
-    } else {
-      String s1 = replace(s, "\\", "\\\\");
-      String s2 = replace(s1, "\"", "\\\"");
-      String s3 = replace(s2, "\n\r", "\\n");
-      String s4 = replace(s3, "\n", "\\n");
-      String s5 = replace(s4, "\r", "\\r");
-      pw.print("\"");
-      pw.print(s5);
-      pw.print("\"");
+    } catch (IOException ioe) {
+      throw new IllegalStateException("The specified appendable should not incur I/O.", ioe);
     }
   }
 
@@ -712,6 +717,29 @@ public class Util {
     return buf.toString();
   }
 
+  /**
+   * Returns true when input string is a valid Java identifier.
+   * @param s input string
+   * @return true when input string is a valid Java identifier
+   */
+  public static boolean isValidJavaIdentifier(String s) {
+    if (s.isEmpty()) {
+      return false;
+    }
+    if (!Character.isJavaIdentifierStart(s.codePointAt(0))) {
+      return false;
+    }
+    int i = 0;
+    while (i < s.length()) {
+      int codePoint = s.codePointAt(i);
+      if (!Character.isJavaIdentifierPart(codePoint)) {
+        return false;
+      }
+      i += Character.charCount(codePoint);
+    }
+    return true;
+  }
+
   public static String toLinux(String s) {
     return s.replaceAll("\r\n", "\n");
   }
@@ -774,7 +802,7 @@ public class Util {
 
   /**
    * Returns the {@link Charset} object representing the value of
-   * {@link SaffronProperties#defaultCharset}
+   * {@link CalciteSystemProperty#DEFAULT_CHARSET}
    *
    * @throws java.nio.charset.IllegalCharsetNameException If the given charset
    *                                                      name is illegal
@@ -819,13 +847,25 @@ public class Util {
    * but we don't require Guava version 20 yet. */
   public static void throwIfUnchecked(Throwable throwable) {
     Bug.upgrade("Remove when minimum Guava version is 20");
-    checkNotNull(throwable);
+    Objects.requireNonNull(throwable);
     if (throwable instanceof RuntimeException) {
       throw (RuntimeException) throwable;
     }
     if (throwable instanceof Error) {
       throw (Error) throwable;
     }
+  }
+
+  /**
+   * Wraps an exception with {@link RuntimeException} and return it.
+   * If the exception is already an instance of RuntimeException,
+   * returns it directly.
+   */
+  public static RuntimeException toUnchecked(Exception e) {
+    if (e instanceof RuntimeException) {
+      return (RuntimeException) e;
+    }
+    return new RuntimeException(e);
   }
 
   /**
@@ -868,7 +908,7 @@ public class Util {
   }
 
   /** @deprecated Use {@link Preconditions#checkArgument}
-   * or {@link Preconditions#checkNotNull(Object)} */
+   * or {@link Objects#requireNonNull(Object)} */
   @Deprecated // to be removed before 2.0
   public static void pre(boolean b, String description) {
     if (!b) {
@@ -877,7 +917,7 @@ public class Util {
   }
 
   /** @deprecated Use {@link Preconditions#checkArgument}
-   * or {@link Preconditions#checkNotNull(Object)} */
+   * or {@link Objects#requireNonNull(Object)} */
   @Deprecated // to be removed before 2.0
   public static void post(boolean b, String description) {
     if (!b) {
@@ -1553,7 +1593,7 @@ public class Util {
    * @return A list whose members are of the desired type.
    */
   public static <E> List<E> cast(List<? super E> list, Class<E> clazz) {
-    return new CastingList<E>(list, clazz);
+    return new CastingList<>(list, clazz);
   }
 
   /**
@@ -1603,11 +1643,7 @@ public class Util {
   public static <E> Iterable<E> cast(
       final Iterable<? super E> iterable,
       final Class<E> clazz) {
-    return new Iterable<E>() {
-      public Iterator<E> iterator() {
-        return cast(iterable.iterator(), clazz);
-      }
-    };
+    return () -> cast(iterable.iterator(), clazz);
   }
 
   /**
@@ -1631,11 +1667,7 @@ public class Util {
   public static <E> Iterable<E> filter(
       final Iterable<?> iterable,
       final Class<E> includeFilter) {
-    return new Iterable<E>() {
-      public Iterator<E> iterator() {
-        return new Filterator<>(iterable.iterator(), includeFilter);
-      }
-    };
+    return () -> new Filterator<>(iterable.iterator(), includeFilter);
   }
 
   public static <E> Collection<E> filter(
@@ -1838,6 +1870,17 @@ public class Util {
     };
   }
 
+  /** Given a list with N elements
+   * [e<sub>0</sub>, e<sub>1</sub>, ..., e<sub>N-1</sub>]
+   * (where N is even), returns a list of the N / 2 elements
+   * [ (e<sub>0</sub>, e<sub>1</sub>),
+   * (e<sub>2</sub>, e<sub>3</sub>), ... ]. */
+  public static <E> List<Pair<E, E>> pairs(final List<E> list) {
+    //noinspection unchecked
+    return Pair.zip(quotientList(list, 2, 0),
+        quotientList(list, 2, 1));
+  }
+
   /** Returns the first value if it is not null,
    * otherwise the second value.
    *
@@ -1898,7 +1941,7 @@ public class Util {
   }
 
   public static <T> Iterable<T> orEmpty(Iterable<T> v0) {
-    return v0 != null ? v0 : ImmutableList.<T>of();
+    return v0 != null ? v0 : ImmutableList.of();
   }
 
   /** Returns the last element of a list.
@@ -2199,16 +2242,11 @@ public class Util {
    * @param <V> Value type
    * @return Map that is a view onto the values
    */
-  public static <K, V> Map<K, V> asIndexMap(
+  public static <K, V> Map<K, V> asIndexMapJ(
       final Collection<V> values,
       final Function<V, K> function) {
     final Collection<Map.Entry<K, V>> entries =
-        Collections2.transform(values,
-            new Function<V, Map.Entry<K, V>>() {
-              public Map.Entry<K, V> apply(@Nullable V input) {
-                return Pair.of(function.apply(input), input);
-              }
-            });
+        Collections2.transform(values, v -> Pair.of(function.apply(v), v));
     final Set<Map.Entry<K, V>> entrySet =
         new AbstractSet<Map.Entry<K, V>>() {
           public Iterator<Map.Entry<K, V>> iterator() {
@@ -2224,6 +2262,14 @@ public class Util {
         return entrySet;
       }
     };
+  }
+
+  @SuppressWarnings("Guava")
+  @Deprecated
+  public static <K, V> Map<K, V> asIndexMap(
+      final Collection<V> values,
+      final com.google.common.base.Function<V, K> function) {
+    return asIndexMapJ(values, function::apply);
   }
 
   /**
@@ -2250,30 +2296,6 @@ public class Util {
     }
   }
 
-  /** Returns the value of a system property as a boolean.
-   *
-   * <p>For example, the property "foo" is considered true if you supply
-   * {@code -Dfoo} or {@code -Dfoo=true} or {@code -Dfoo=TRUE},
-   * false if you omit the flag or supply {@code -Dfoo=false}.
-   *
-   * @param property Property name
-   * @return Whether property is true
-   */
-  public static boolean getBooleanProperty(String property) {
-    return getBooleanProperty(property, false);
-  }
-
-  /** Returns the value of a system property as a boolean, returning a given
-   * default value if the property is not specified. */
-  public static boolean getBooleanProperty(String property,
-      boolean defaultValue) {
-    final String v = System.getProperties().getProperty(property);
-    if (v == null) {
-      return defaultValue;
-    }
-    return "".equals(v) || "true".equalsIgnoreCase(v);
-  }
-
   /** Returns a copy of a list of lists, making the component lists immutable if
    * they are not already. */
   public static <E> List<List<E>> immutableCopy(
@@ -2287,7 +2309,8 @@ public class Util {
     if (n == 0) {
       // Lists are already immutable. Furthermore, if the outer list is
       // immutable we will just return "lists" unchanged.
-      return ImmutableList.copyOf((Iterable) lists);
+      //noinspection unchecked
+      return ImmutableList.copyOf((Iterable<List<E>>) lists);
     }
     final ImmutableList.Builder<List<E>> builder =
         ImmutableList.builder();
@@ -2351,6 +2374,9 @@ public class Util {
    * Returns a {@code Collector} that accumulates the input elements into a
    * Guava {@link ImmutableList} via a {@link ImmutableList.Builder}.
    *
+   * <p>It will be obsolete when we move to {@link Bug#upgrade Guava 21.0},
+   * which has {@code ImmutableList.toImmutableList()}.
+   *
    * @param <T> Type of the input elements
    *
    * @return a {@code Collector} that collects all the input elements into an
@@ -2364,6 +2390,47 @@ public class Util {
           return t;
         },
         ImmutableList.Builder::build);
+  }
+
+  /** Transforms a list, applying a function to each element. */
+  public static <F, T> List<T> transform(List<F> list,
+      java.util.function.Function<F, T> function) {
+    if (list instanceof RandomAccess) {
+      return new RandomAccessTransformingList<>(list, function);
+    } else {
+      return new TransformingList<>(list, function);
+    }
+  }
+
+  /** Filters an iterable. */
+  public static <E> Iterable<E> filter(Iterable<E> iterable,
+      Predicate<E> predicate) {
+    return () -> filter(iterable.iterator(), predicate);
+  }
+
+  /** Filters an iterator. */
+  public static <E> Iterator<E> filter(Iterator<E> iterator,
+      Predicate<E> predicate) {
+    return new FilteringIterator<>(iterator, predicate);
+  }
+
+  /** Returns a view of a list, picking the elements of a list with the given
+   * set of ordinals. */
+  public static <E> List<E> select(List<E> list, List<Integer> ordinals) {
+    return new AbstractList<E>() {
+      @Override public int size() {
+        return ordinals.size();
+      }
+
+      @Override public E get(int index) {
+        return list.get(ordinals.get(index));
+      }
+    };
+  }
+
+  /** Returns a map which ignores any write operation. */
+  public static <K, V> Map<K, V> blackholeMap() {
+    return BlackholeMap.of();
   }
 
   //~ Inner Classes ----------------------------------------------------------
@@ -2399,6 +2466,86 @@ public class Util {
         throw FoundOne.NULL;
       }
       return super.visit(call);
+    }
+  }
+
+  /** List that returns the same number of elements as a backing list,
+   * applying a transformation function to each one.
+   *
+   * @param <F> Element type of backing list
+   * @param <T> Element type of this list
+   */
+  private static class TransformingList<F, T> extends AbstractList<T> {
+    private final java.util.function.Function<F, T> function;
+    private final List<F> list;
+
+    TransformingList(List<F> list,
+        java.util.function.Function<F, T> function) {
+      this.function = function;
+      this.list = list;
+    }
+
+    public T get(int i) {
+      return function.apply(list.get(i));
+    }
+
+    public int size() {
+      return list.size();
+    }
+
+    @Override @Nonnull public Iterator<T> iterator() {
+      return listIterator();
+    }
+  }
+
+  /** Extension to {@link TransformingList} that implements
+   * {@link RandomAccess}.
+   *
+   * @param <F> Element type of backing list
+   * @param <T> Element type of this list
+   */
+  private static class RandomAccessTransformingList<F, T>
+      extends TransformingList<F, T> implements RandomAccess {
+    RandomAccessTransformingList(List<F> list,
+        java.util.function.Function<F, T> function) {
+      super(list, function);
+    }
+  }
+
+  /** Iterator that applies a predicate to each element.
+   *
+   * @param <T> Element type */
+  private static class FilteringIterator<T> implements Iterator<T> {
+    private static final Object DUMMY = new Object();
+    final Iterator<? extends T> iterator;
+    private final Predicate<T> predicate;
+    T current;
+
+    FilteringIterator(Iterator<? extends T> iterator,
+        Predicate<T> predicate) {
+      this.iterator = iterator;
+      this.predicate = predicate;
+      current = moveNext();
+    }
+
+    public boolean hasNext() {
+      return current != DUMMY;
+    }
+
+    public T next() {
+      final T t = this.current;
+      current = moveNext();
+      return t;
+    }
+
+    protected T moveNext() {
+      while (iterator.hasNext()) {
+        T t = iterator.next();
+        if (predicate.test(t)) {
+          return t;
+        }
+      }
+      return (T) DUMMY;
     }
   }
 }

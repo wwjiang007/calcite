@@ -17,6 +17,7 @@
 package org.apache.calcite.prepare;
 
 import org.apache.calcite.adapter.enumerable.EnumerableRel;
+import org.apache.calcite.config.CalciteSystemProperty;
 import org.apache.calcite.interpreter.BindableConvention;
 import org.apache.calcite.jdbc.CalcitePrepare;
 import org.apache.calcite.jdbc.CalciteSchema;
@@ -50,8 +51,8 @@ import org.apache.calcite.sql2rel.SqlRexConvertletTable;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -107,7 +108,7 @@ class CalciteMaterializer extends CalcitePrepareImpl.CalcitePreparingStmt {
     for (Callback x : useStar(schema, materialization.queryRel)) {
       // Success -- we found a star table that matches.
       materialization.materialize(x.rel, x.starRelOptTable);
-      if (CalcitePrepareImpl.DEBUG) {
+      if (CalciteSystemProperty.DEBUG.value()) {
         System.out.println("Materialization "
             + materialization.materializedTable + " matched star table "
             + x.starTable + "; query after re-write: "
@@ -126,7 +127,7 @@ class CalciteMaterializer extends CalcitePrepareImpl.CalcitePreparingStmt {
       // Don't waste effort converting to leaf-join form.
       return ImmutableList.of();
     }
-    final List<Callback> list = Lists.newArrayList();
+    final List<Callback> list = new ArrayList<>();
     final RelNode rel2 =
         RelOptMaterialization.toLeafJoinForm(queryRel);
     for (CalciteSchema.TableEntry starTable : starTables) {

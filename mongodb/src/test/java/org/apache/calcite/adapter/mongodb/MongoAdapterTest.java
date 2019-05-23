@@ -21,12 +21,10 @@ import org.apache.calcite.schema.SchemaFactory;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.test.CalciteAssert;
 import org.apache.calcite.test.MongoAssertions;
-
 import org.apache.calcite.util.Bug;
+import org.apache.calcite.util.TestUtil;
 import org.apache.calcite.util.Util;
 
-import com.google.common.base.Function;
-import com.google.common.base.Preconditions;
 import com.google.common.io.LineProcessor;
 import com.google.common.io.Resources;
 import com.mongodb.client.MongoCollection;
@@ -39,9 +37,8 @@ import org.bson.BsonDocument;
 import org.bson.BsonInt32;
 import org.bson.BsonString;
 import org.bson.Document;
-
+import org.bson.json.JsonWriterSettings;
 import org.hamcrest.CoreMatchers;
-
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
@@ -52,13 +49,18 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Testing mongo adapter functionality. By default runs with
@@ -95,9 +97,10 @@ public class MongoAdapterTest implements SchemaFactory {
     if (datatypes.count() > 0) {
       datatypes.deleteMany(new BsonDocument());
     }
+
     BsonDocument doc = new BsonDocument();
-    Date date = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).parse("2012-09-05");
-    doc.put("date", new BsonDateTime(date.getTime()));
+    Instant instant = LocalDate.of(2012, 9, 5).atStartOfDay(ZoneOffset.UTC).toInstant();
+    doc.put("date", new BsonDateTime(instant.toEpochMilli()));
     doc.put("value", new BsonInt32(1231));
     doc.put("ownerId", new BsonString("531e7789e4b0853ddb861313"));
     datatypes.insertOne(doc);
@@ -107,7 +110,7 @@ public class MongoAdapterTest implements SchemaFactory {
 
   private static void populate(MongoCollection<Document> collection, URL resource)
       throws IOException {
-    Preconditions.checkNotNull(collection, "collection");
+    Objects.requireNonNull(collection, "collection");
 
     if (collection.count() > 0) {
       // delete any existing documents (run from a clean set)
@@ -144,7 +147,7 @@ public class MongoAdapterTest implements SchemaFactory {
   }
 
   private CalciteAssert.AssertThat assertModel(URL url) {
-    Preconditions.checkNotNull(url, "url");
+    Objects.requireNonNull(url, "url");
     try {
       return assertModel(Resources.toString(url, StandardCharsets.UTF_8));
     } catch (IOException e) {
@@ -158,7 +161,7 @@ public class MongoAdapterTest implements SchemaFactory {
         .returnsCount(ZIPS_SIZE)
         .explainContains("PLAN=MongoToEnumerableConverter\n"
             + "  MongoSort(sort0=[$4], dir0=[ASC])\n"
-            + "    MongoProject(CITY=[CAST(ITEM($0, 'city')):VARCHAR(20) CHARACTER SET \"ISO-8859-1\" COLLATE \"ISO-8859-1$en_US$primary\"], LONGITUDE=[CAST(ITEM(ITEM($0, 'loc'), 0)):FLOAT], LATITUDE=[CAST(ITEM(ITEM($0, 'loc'), 1)):FLOAT], POP=[CAST(ITEM($0, 'pop')):INTEGER], STATE=[CAST(ITEM($0, 'state')):VARCHAR(2) CHARACTER SET \"ISO-8859-1\" COLLATE \"ISO-8859-1$en_US$primary\"], ID=[CAST(ITEM($0, '_id')):VARCHAR(5) CHARACTER SET \"ISO-8859-1\" COLLATE \"ISO-8859-1$en_US$primary\"])\n"
+            + "    MongoProject(CITY=[CAST(ITEM($0, 'city')):VARCHAR(20)], LONGITUDE=[CAST(ITEM(ITEM($0, 'loc'), 0)):FLOAT], LATITUDE=[CAST(ITEM(ITEM($0, 'loc'), 1)):FLOAT], POP=[CAST(ITEM($0, 'pop')):INTEGER], STATE=[CAST(ITEM($0, 'state')):VARCHAR(2)], ID=[CAST(ITEM($0, '_id')):VARCHAR(5)])\n"
             + "      MongoTableScan(table=[[mongo_raw, zips]])");
   }
 
@@ -228,8 +231,8 @@ public class MongoAdapterTest implements SchemaFactory {
                 "{$sort: {STATE: 1, ID: 1}}"))
         .explainContains("PLAN=MongoToEnumerableConverter\n"
             + "  MongoSort(sort0=[$4], sort1=[$5], dir0=[ASC], dir1=[ASC])\n"
-            + "    MongoProject(CITY=[CAST(ITEM($0, 'city')):VARCHAR(20) CHARACTER SET \"ISO-8859-1\" COLLATE \"ISO-8859-1$en_US$primary\"], LONGITUDE=[CAST(ITEM(ITEM($0, 'loc'), 0)):FLOAT], LATITUDE=[CAST(ITEM(ITEM($0, 'loc'), 1)):FLOAT], POP=[CAST(ITEM($0, 'pop')):INTEGER], STATE=[CAST(ITEM($0, 'state')):VARCHAR(2) CHARACTER SET \"ISO-8859-1\" COLLATE \"ISO-8859-1$en_US$primary\"], ID=[CAST(ITEM($0, '_id')):VARCHAR(5) CHARACTER SET \"ISO-8859-1\" COLLATE \"ISO-8859-1$en_US$primary\"])\n"
-            + "      MongoFilter(condition=[AND(=(CAST(ITEM($0, 'city')):VARCHAR(20) CHARACTER SET \"ISO-8859-1\" COLLATE \"ISO-8859-1$en_US$primary\", 'SPRINGFIELD'), >=(CAST(ITEM($0, '_id')):VARCHAR(5) CHARACTER SET \"ISO-8859-1\" COLLATE \"ISO-8859-1$en_US$primary\", '70000'))])\n"
+            + "    MongoProject(CITY=[CAST(ITEM($0, 'city')):VARCHAR(20)], LONGITUDE=[CAST(ITEM(ITEM($0, 'loc'), 0)):FLOAT], LATITUDE=[CAST(ITEM(ITEM($0, 'loc'), 1)):FLOAT], POP=[CAST(ITEM($0, 'pop')):INTEGER], STATE=[CAST(ITEM($0, 'state')):VARCHAR(2)], ID=[CAST(ITEM($0, '_id')):VARCHAR(5)])\n"
+            + "      MongoFilter(condition=[AND(=(CAST(ITEM($0, 'city')):VARCHAR(20), 'SPRINGFIELD'), >=(CAST(ITEM($0, '_id')):VARCHAR(5), '70000'))])\n"
             + "        MongoTableScan(table=[[mongo_raw, zips]])");
   }
 
@@ -300,8 +303,8 @@ public class MongoAdapterTest implements SchemaFactory {
         .query(
             "select * from \"warehouse\" where \"warehouse_state_province\" = 'CA'")
         .explainContains("PLAN=MongoToEnumerableConverter\n"
-            + "  MongoProject(warehouse_id=[CAST(ITEM($0, 'warehouse_id')):DOUBLE], warehouse_state_province=[CAST(ITEM($0, 'warehouse_state_province')):VARCHAR(20) CHARACTER SET \"ISO-8859-1\" COLLATE \"ISO-8859-1$en_US$primary\"])\n"
-            + "    MongoFilter(condition=[=(CAST(ITEM($0, 'warehouse_state_province')):VARCHAR(20) CHARACTER SET \"ISO-8859-1\" COLLATE \"ISO-8859-1$en_US$primary\", 'CA')])\n"
+            + "  MongoProject(warehouse_id=[CAST(ITEM($0, 'warehouse_id')):DOUBLE], warehouse_state_province=[CAST(ITEM($0, 'warehouse_state_province')):VARCHAR(20)])\n"
+            + "    MongoFilter(condition=[=(CAST(ITEM($0, 'warehouse_state_province')):VARCHAR(20), 'CA')])\n"
             + "      MongoTableScan(table=[[mongo_raw, warehouse]])")
         .returns(
             MongoAssertions.checkResultUnordered(
@@ -455,7 +458,7 @@ public class MongoAdapterTest implements SchemaFactory {
         .returns("STATE=AK; A=26856\nSTATE=AL; A=43383\n")
         .queryContains(
             mongoChecker(
-                "{$project: {POP: '$pop', STATE: '$state'}}",
+                "{$project: {STATE: '$state', POP: '$pop'}}",
                 "{$group: {_id: '$STATE', A: {$avg: '$POP'}}}",
                 "{$project: {STATE: '$_id', A: '$A'}}",
                 "{$sort: {STATE: 1}}"));
@@ -533,7 +536,7 @@ public class MongoAdapterTest implements SchemaFactory {
             + "C=3; STATE=AL; MIN_POP=42124; MAX_POP=44165; SUM_POP=130151\n")
         .queryContains(
             mongoChecker(
-                "{$project: {POP: '$pop', STATE: '$state'}}",
+                "{$project: {STATE: '$state', POP: '$pop'}}",
                 "{$group: {_id: '$STATE', C: {$sum: 1}, MIN_POP: {$min: '$POP'}, MAX_POP: {$max: '$POP'}, SUM_POP: {$sum: '$POP'}}}",
                 "{$project: {STATE: '$_id', C: '$C', MIN_POP: '$MIN_POP', MAX_POP: '$MAX_POP', SUM_POP: '$SUM_POP'}}",
                 "{$project: {C: 1, STATE: 1, MIN_POP: 1, MAX_POP: 1, SUM_POP: 1}}",
@@ -550,9 +553,9 @@ public class MongoAdapterTest implements SchemaFactory {
             + "C=1; STATE=SC; CITY=AIKEN\n")
         .queryContains(
             mongoChecker(
-                "{$project: {CITY: '$city', STATE: '$state'}}",
-                "{$group: {_id: {CITY: '$CITY', STATE: '$STATE'}, C: {$sum: 1}}}",
-                "{$project: {_id: 0, CITY: '$_id.CITY', STATE: '$_id.STATE', C: '$C'}}",
+                "{$project: {STATE: '$state', CITY: '$city'}}",
+                "{$group: {_id: {STATE: '$STATE', CITY: '$CITY'}, C: {$sum: 1}}}",
+                "{$project: {_id: 0, STATE: '$_id.STATE', CITY: '$_id.CITY', C: '$C'}}",
                 "{$sort: {C: -1, CITY: 1}}",
                 "{$limit: 2}",
                 "{$project: {C: 1, STATE: 1, CITY: 1}}"));
@@ -635,8 +638,8 @@ public class MongoAdapterTest implements SchemaFactory {
             "STATE=CA; CITY=BELL GARDENS",
             "STATE=CA; CITY=NORWALK")
         .explainContains("PLAN=MongoToEnumerableConverter\n"
-            + "  MongoProject(STATE=[CAST(ITEM($0, 'state')):VARCHAR(2) CHARACTER SET \"ISO-8859-1\" COLLATE \"ISO-8859-1$en_US$primary\"], CITY=[CAST(ITEM($0, 'city')):VARCHAR(20) CHARACTER SET \"ISO-8859-1\" COLLATE \"ISO-8859-1$en_US$primary\"])\n"
-            + "    MongoFilter(condition=[=(CAST(ITEM($0, 'state')):VARCHAR(2) CHARACTER SET \"ISO-8859-1\" COLLATE \"ISO-8859-1$en_US$primary\", 'CA')])\n"
+            + "  MongoProject(STATE=[CAST(ITEM($0, 'state')):VARCHAR(2)], CITY=[CAST(ITEM($0, 'city')):VARCHAR(20)])\n"
+            + "    MongoFilter(condition=[=(CAST(ITEM($0, 'state')):VARCHAR(2), 'CA')])\n"
             + "      MongoTableScan(table=[[mongo_raw, zips]])");
   }
 
@@ -697,21 +700,6 @@ public class MongoAdapterTest implements SchemaFactory {
    * <a href="https://issues.apache.org/jira/browse/CALCITE-286">[CALCITE-286]
    * Error casting MongoDB date</a>. */
   @Test public void testDate() {
-    // Assumes that you have created the following collection before running
-    // this test:
-    //
-    // $ mongo
-    // > use test
-    // switched to db test
-    // > db.createCollection("datatypes")
-    // { "ok" : 1 }
-    // > db.datatypes.insert( {
-    //     "_id" : ObjectId("53655599e4b0c980df0a8c27"),
-    //     "_class" : "com.ericblue.Test",
-    //     "date" : ISODate("2012-09-05T07:00:00Z"),
-    //     "value" : 1231,
-    //     "ownerId" : "531e7789e4b0853ddb861313"
-    //   } )
     assertModel("{\n"
         + "  version: '1.0',\n"
         + "  defaultSchema: 'test',\n"
@@ -737,37 +725,60 @@ public class MongoAdapterTest implements SchemaFactory {
   @Test public void testCountViaInt() {
     assertModel(MODEL)
         .query("select count(*) from zips")
-        .returns(
-            new Function<ResultSet, Void>() {
-              public Void apply(ResultSet input) {
-                try {
-                  Assert.assertThat(input.next(), CoreMatchers.is(true));
-                  Assert.assertThat(input.getInt(1), CoreMatchers.is(ZIPS_SIZE));
-                  return null;
-                } catch (SQLException e) {
-                  throw new RuntimeException(e);
-                }
-              }
-            });
+        .returns(input -> {
+          try {
+            Assert.assertThat(input.next(), CoreMatchers.is(true));
+            Assert.assertThat(input.getInt(1), CoreMatchers.is(ZIPS_SIZE));
+          } catch (SQLException e) {
+            throw TestUtil.rethrow(e);
+          }
+        });
   }
 
   /**
-   * Returns a function that checks that a particular MongoDB pipeline is
-   * generated to implement a query.
+   * Returns a function that checks that a particular MongoDB query
+   * has been called.
    *
-   * @param strings Expected expressions
+   * @param expected Expected query (as array)
    * @return validation function
    */
-  private static Function<List, Void> mongoChecker(final String... strings) {
-    return new Function<List, Void>() {
-      public Void apply(List actual) {
-        Object[] actualArray =
-            actual == null || actual.isEmpty()
-                ? null
-                : ((List) actual.get(0)).toArray();
-        CalciteAssert.assertArrayEqual("expected MongoDB query not found",
-            strings, actualArray);
-        return null;
+  private static Consumer<List> mongoChecker(final String... expected) {
+    return actual -> {
+      if (expected == null) {
+        Assert.assertThat("null mongo Query", actual, CoreMatchers.nullValue());
+        return;
+      }
+
+      if (expected.length == 0) {
+        CalciteAssert.assertArrayEqual("empty Mongo query", expected,
+            actual.toArray(new Object[0]));
+        return;
+      }
+
+      // comparing list of Bsons (expected and actual)
+      final List<BsonDocument> expectedBsons = Arrays.stream(expected).map(BsonDocument::parse)
+          .collect(Collectors.toList());
+
+      final List<BsonDocument> actualBsons =  ((List<?>) actual.get(0))
+          .stream()
+          .map(Objects::toString)
+          .map(BsonDocument::parse)
+          .collect(Collectors.toList());
+
+      // compare Bson (not string) representation
+      if (!expectedBsons.equals(actualBsons)) {
+        final JsonWriterSettings settings = JsonWriterSettings.builder().indent(true).build();
+        // outputs Bson in pretty Json format (with new lines)
+        // so output is human friendly in IDE diff tool
+        final Function<List<BsonDocument>, String> prettyFn = bsons -> bsons.stream()
+            .map(b -> b.toJson(settings)).collect(Collectors.joining("\n"));
+
+        // used to pretty print Assertion error
+        Assert.assertEquals("expected and actual Mongo queries (pipelines) do not match",
+            prettyFn.apply(expectedBsons),
+            prettyFn.apply(actualBsons));
+
+        Assert.fail("Should have failed previously because expected != actual is known to be true");
       }
     };
   }

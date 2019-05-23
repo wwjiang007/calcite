@@ -22,17 +22,15 @@ import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperator;
-import org.apache.calcite.sql.SqlSyntax;
 import org.apache.calcite.sql.SqlUnresolvedFunction;
-import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.validate.SqlConformance;
 import org.apache.calcite.util.Glossary;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 
 import java.io.Reader;
 import java.io.StringReader;
@@ -328,11 +326,6 @@ public abstract class SqlAbstractParserImpl {
 
   //~ Instance fields --------------------------------------------------------
 
-  /**
-   * Operator table containing the standard SQL operators and functions.
-   */
-  protected final SqlStdOperatorTable opTab = SqlStdOperatorTable.instance();
-
   protected int nDynamicParams;
 
   protected String originalSql;
@@ -384,26 +377,10 @@ public abstract class SqlAbstractParserImpl {
       SqlFunctionCategory funcType,
       SqlLiteral functionQualifier,
       SqlNode[] operands) {
-    SqlOperator fun = null;
-
-    // First, try a half-hearted resolution as a builtin function.
-    // If we find one, use it; this will guarantee that we
-    // preserve the correct syntax (i.e. don't quote builtin function
-    /// name when regenerating SQL).
-    if (funName.isSimple()) {
-      final List<SqlOperator> list = Lists.newArrayList();
-      opTab.lookupOperatorOverloads(funName, funcType, SqlSyntax.FUNCTION, list);
-      if (list.size() == 1) {
-        fun = list.get(0);
-      }
-    }
-
-    // Otherwise, just create a placeholder function.  Later, during
+    // Create a placeholder function.  Later, during
     // validation, it will be resolved into a real function reference.
-    if (fun == null) {
-      fun = new SqlUnresolvedFunction(funName, null, null, null, null,
-          funcType);
-    }
+    SqlOperator fun = new SqlUnresolvedFunction(funName, null, null, null, null,
+        funcType);
 
     return fun.createCall(functionQualifier, pos, operands);
   }
@@ -447,6 +424,15 @@ public abstract class SqlAbstractParserImpl {
    * @return constructed parse tree.
    */
   public abstract SqlNode parseSqlStmtEof() throws Exception;
+
+  /**
+   * Parses a list of SQL statements separated by semicolon and constructs a
+   * parse tree. The semicolon is required between statements, but is
+   * optional at the end.
+   *
+   * @return constructed list of SQL statements.
+   */
+  public abstract SqlNodeList parseSqlStmtList() throws Exception;
 
   /**
    * Sets the tab stop size.
@@ -570,20 +556,20 @@ public abstract class SqlAbstractParserImpl {
    * Default implementation of the {@link Metadata} interface.
    */
   public static class MetadataImpl implements Metadata {
-    private final Set<String> reservedFunctionNames = new HashSet<String>();
-    private final Set<String> contextVariableNames = new HashSet<String>();
-    private final Set<String> nonReservedKeyWordSet = new HashSet<String>();
+    private final Set<String> reservedFunctionNames = new HashSet<>();
+    private final Set<String> contextVariableNames = new HashSet<>();
+    private final Set<String> nonReservedKeyWordSet = new HashSet<>();
 
     /**
      * Set of all tokens.
      */
-    private final SortedSet<String> tokenSet = new TreeSet<String>();
+    private final SortedSet<String> tokenSet = new TreeSet<>();
 
     /**
      * Immutable list of all tokens, in alphabetical order.
      */
     private final List<String> tokenList;
-    private final Set<String> reservedWords = new HashSet<String>();
+    private final Set<String> reservedWords = new HashSet<>();
     private final String sql92ReservedWords;
 
     /**
@@ -597,7 +583,7 @@ public abstract class SqlAbstractParserImpl {
       initList(sqlParser, nonReservedKeyWordSet, "NonReservedKeyWord");
       tokenList = ImmutableList.copyOf(tokenSet);
       sql92ReservedWords = constructSql92ReservedWordList();
-      Set<String> reservedWordSet = new TreeSet<String>();
+      Set<String> reservedWordSet = new TreeSet<>();
       reservedWordSet.addAll(tokenSet);
       reservedWordSet.removeAll(nonReservedKeyWordSet);
       reservedWords.addAll(reservedWordSet);
@@ -670,7 +656,7 @@ public abstract class SqlAbstractParserImpl {
      */
     private String constructSql92ReservedWordList() {
       StringBuilder sb = new StringBuilder();
-      TreeSet<String> jdbcReservedSet = new TreeSet<String>();
+      TreeSet<String> jdbcReservedSet = new TreeSet<>();
       jdbcReservedSet.addAll(tokenSet);
       jdbcReservedSet.removeAll(SQL_92_RESERVED_WORD_SET);
       jdbcReservedSet.removeAll(nonReservedKeyWordSet);

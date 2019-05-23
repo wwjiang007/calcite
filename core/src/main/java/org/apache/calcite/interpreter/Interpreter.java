@@ -17,6 +17,7 @@
 package org.apache.calcite.interpreter;
 
 import org.apache.calcite.DataContext;
+import org.apache.calcite.config.CalciteSystemProperty;
 import org.apache.calcite.linq4j.AbstractEnumerable;
 import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.linq4j.Enumerator;
@@ -27,7 +28,6 @@ import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.hep.HepPlanner;
 import org.apache.calcite.plan.hep.HepProgram;
 import org.apache.calcite.plan.hep.HepProgramBuilder;
-import org.apache.calcite.prepare.CalcitePrepareImpl;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.rules.CalcSplitRule;
@@ -46,7 +46,6 @@ import org.apache.calcite.util.ReflectiveVisitDispatcher;
 import org.apache.calcite.util.ReflectiveVisitor;
 import org.apache.calcite.util.Util;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
@@ -65,6 +64,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 
 /**
  * Interpreter.
@@ -81,7 +81,7 @@ public class Interpreter extends AbstractEnumerable<Object[]>
 
   /** Creates an Interpreter. */
   public Interpreter(DataContext dataContext, RelNode rootRel) {
-    this.dataContext = Preconditions.checkNotNull(dataContext);
+    this.dataContext = Objects.requireNonNull(dataContext);
     final RelNode rel = optimize(rootRel);
     final CompilerImpl compiler =
         new Nodes.CoreCompiler(this, rootRel.getCluster());
@@ -266,7 +266,7 @@ public class Interpreter extends AbstractEnumerable<Object[]>
     private final Enumerator<Row> enumerator;
 
     EnumeratorSource(final Enumerator<Row> enumerator) {
-      this.enumerator = Preconditions.checkNotNull(enumerator);
+      this.enumerator = Objects.requireNonNull(enumerator);
     }
 
     @Override public Row receive() {
@@ -417,7 +417,7 @@ public class Interpreter extends AbstractEnumerable<Object[]>
         if (rel == null) {
           break;
         }
-        if (CalcitePrepareImpl.DEBUG) {
+        if (CalciteSystemProperty.DEBUG.value()) {
           System.out.println("Interpreter: rewrite " + p + " to " + rel);
         }
         p = rel;
@@ -534,7 +534,7 @@ public class Interpreter extends AbstractEnumerable<Object[]>
         nodeInfo = new NodeInfo(rel, null);
         nodes.put(rel, nodeInfo);
         for (Edge edge : edges2) {
-          nodeInfo.sinks.put(edge, new ListSink(new ArrayDeque<Row>()));
+          nodeInfo.sinks.put(edge, new ListSink(new ArrayDeque<>()));
         }
       }
       if (edges.size() == 1) {

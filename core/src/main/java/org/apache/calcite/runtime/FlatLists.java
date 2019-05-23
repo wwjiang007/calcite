@@ -49,32 +49,32 @@ public class FlatLists {
 
   /** Creates a flat list with 1 element. */
   public static <T> List<T> of(T t0) {
-    return new Flat1List<T>(t0);
+    return new Flat1List<>(t0);
   }
 
   /** Creates a flat list with 2 elements. */
   public static <T> List<T> of(T t0, T t1) {
-    return new Flat2List<T>(t0, t1);
+    return new Flat2List<>(t0, t1);
   }
 
   /** Creates a flat list with 3 elements. */
   public static <T> List<T> of(T t0, T t1, T t2) {
-    return new Flat3List<T>(t0, t1, t2);
+    return new Flat3List<>(t0, t1, t2);
   }
 
   /** Creates a flat list with 4 elements. */
   public static <T> List<T> of(T t0, T t1, T t2, T t3) {
-    return new Flat4List<T>(t0, t1, t2, t3);
+    return new Flat4List<>(t0, t1, t2, t3);
   }
 
   /** Creates a flat list with 6 elements. */
   public static <T> List<T> of(T t0, T t1, T t2, T t3, T t4) {
-    return new Flat5List<T>(t0, t1, t2, t3, t4);
+    return new Flat5List<>(t0, t1, t2, t3, t4);
   }
 
   /** Creates a flat list with 6 elements. */
   public static <T> List<T> of(T t0, T t1, T t2, T t3, T t4, T t5) {
-    return new Flat6List<T>(t0, t1, t2, t3, t4, t5);
+    return new Flat6List<>(t0, t1, t2, t3, t4, t5);
   }
 
   /**
@@ -140,7 +140,7 @@ public class FlatLists {
    * @param t Array of members of list
    * @return List containing the given members
    */
-  private static <T extends Object & Comparable> ComparableList<T> flatList_(
+  private static <T extends Comparable> ComparableList<T> flatList_(
       T[] t, boolean copy) {
     switch (t.length) {
     case 0:
@@ -263,7 +263,14 @@ public class FlatLists {
   /** Returns a map that consists of a given map plus an (key, value),
    * guaranteed to be an {@link ImmutableMap}. */
   public static <K, V> ImmutableMap<K, V> append(Map<K, V> map, K k, V v) {
-    return ImmutableMap.<K, V>builder().putAll(map).put(k, v).build();
+    final ImmutableMap.Builder<K, V> builder = ImmutableMap.builder();
+    builder.put(k, v);
+    map.forEach((k2, v2) -> {
+      if (!k.equals(k2)) {
+        builder.put(k2, v2);
+      }
+    });
+    return builder.build();
   }
 
   /** Base class for flat lists.
@@ -350,7 +357,7 @@ public class FlatLists {
           return 0;
         }
       } else {
-        if (t0.equals(o)) {
+        if (o.equals(t0)) {
           return 0;
         }
       }
@@ -363,7 +370,7 @@ public class FlatLists {
           return 0;
         }
       } else {
-        if (t0.equals(o)) {
+        if (o.equals(t0)) {
           return 0;
         }
       }
@@ -372,6 +379,10 @@ public class FlatLists {
 
     @SuppressWarnings({"unchecked" })
     public <T2> T2[] toArray(T2[] a) {
+      if (a.length < 1) {
+        // Make a new array of a's runtime type, but my contents:
+        return (T2[]) Arrays.copyOf(toArray(), 1, a.getClass());
+      }
       a[0] = (T2) t0;
       return a;
     }
@@ -385,7 +396,7 @@ public class FlatLists {
     }
 
     public List<T> append(T e) {
-      return new Flat2List<T>(t0, e);
+      return new Flat2List<>(t0, e);
     }
   }
 
@@ -469,10 +480,10 @@ public class FlatLists {
           return 1;
         }
       } else {
-        if (t0.equals(o)) {
+        if (o.equals(t0)) {
           return 0;
         }
-        if (t1.equals(o)) {
+        if (o.equals(t1)) {
           return 1;
         }
       }
@@ -488,10 +499,10 @@ public class FlatLists {
           return 0;
         }
       } else {
-        if (t1.equals(o)) {
+        if (o.equals(t1)) {
           return 1;
         }
-        if (t0.equals(o)) {
+        if (o.equals(t0)) {
           return 0;
         }
       }
@@ -500,6 +511,10 @@ public class FlatLists {
 
     @SuppressWarnings({"unchecked" })
     public <T2> T2[] toArray(T2[] a) {
+      if (a.length < 2) {
+        // Make a new array of a's runtime type, but my contents:
+        return (T2[]) Arrays.copyOf(toArray(), 2, a.getClass());
+      }
       a[0] = (T2) t0;
       a[1] = (T2) t1;
       return a;
@@ -514,7 +529,7 @@ public class FlatLists {
     }
 
     public List<T> append(T e) {
-      return new Flat3List<T>(t0, t1, e);
+      return new Flat3List<>(t0, t1, e);
     }
   }
 
@@ -605,13 +620,13 @@ public class FlatLists {
           return 2;
         }
       } else {
-        if (t0.equals(o)) {
+        if (o.equals(t0)) {
           return 0;
         }
-        if (t1.equals(o)) {
+        if (o.equals(t1)) {
           return 1;
         }
-        if (t2.equals(o)) {
+        if (o.equals(t2)) {
           return 2;
         }
       }
@@ -630,13 +645,13 @@ public class FlatLists {
           return 0;
         }
       } else {
-        if (t2.equals(o)) {
+        if (o.equals(t2)) {
           return 2;
         }
-        if (t1.equals(o)) {
+        if (o.equals(t1)) {
           return 1;
         }
-        if (t0.equals(o)) {
+        if (o.equals(t0)) {
           return 0;
         }
       }
@@ -645,6 +660,10 @@ public class FlatLists {
 
     @SuppressWarnings({"unchecked" })
     public <T2> T2[] toArray(T2[] a) {
+      if (a.length < 3) {
+        // Make a new array of a's runtime type, but my contents:
+        return (T2[]) Arrays.copyOf(toArray(), 3, a.getClass());
+      }
       a[0] = (T2) t0;
       a[1] = (T2) t1;
       a[2] = (T2) t2;
@@ -660,7 +679,7 @@ public class FlatLists {
     }
 
     public List<T> append(T e) {
-      return new Flat4List<T>(t0, t1, t2, e);
+      return new Flat4List<>(t0, t1, t2, e);
     }
   }
 
@@ -760,16 +779,16 @@ public class FlatLists {
           return 3;
         }
       } else {
-        if (t0.equals(o)) {
+        if (o.equals(t0)) {
           return 0;
         }
-        if (t1.equals(o)) {
+        if (o.equals(t1)) {
           return 1;
         }
-        if (t2.equals(o)) {
+        if (o.equals(t2)) {
           return 2;
         }
-        if (t3.equals(o)) {
+        if (o.equals(t3)) {
           return 3;
         }
       }
@@ -791,16 +810,16 @@ public class FlatLists {
           return 0;
         }
       } else {
-        if (t3.equals(o)) {
+        if (o.equals(t3)) {
           return 3;
         }
-        if (t2.equals(o)) {
+        if (o.equals(t2)) {
           return 2;
         }
-        if (t1.equals(o)) {
+        if (o.equals(t1)) {
           return 1;
         }
-        if (t0.equals(o)) {
+        if (o.equals(t0)) {
           return 0;
         }
       }
@@ -809,6 +828,10 @@ public class FlatLists {
 
     @SuppressWarnings({"unchecked" })
     public <T2> T2[] toArray(T2[] a) {
+      if (a.length < 4) {
+        // Make a new array of a's runtime type, but my contents:
+        return (T2[]) Arrays.copyOf(toArray(), 4, a.getClass());
+      }
       a[0] = (T2) t0;
       a[1] = (T2) t1;
       a[2] = (T2) t2;
@@ -825,7 +848,7 @@ public class FlatLists {
     }
 
     public List<T> append(T e) {
-      return new Flat5List<T>(t0, t1, t2, t3, e);
+      return new Flat5List<>(t0, t1, t2, t3, e);
     }
   }
 
@@ -934,19 +957,19 @@ public class FlatLists {
           return 4;
         }
       } else {
-        if (t0.equals(o)) {
+        if (o.equals(t0)) {
           return 0;
         }
-        if (t1.equals(o)) {
+        if (o.equals(t1)) {
           return 1;
         }
-        if (t2.equals(o)) {
+        if (o.equals(t2)) {
           return 2;
         }
-        if (t3.equals(o)) {
+        if (o.equals(t3)) {
           return 3;
         }
-        if (t4.equals(o)) {
+        if (o.equals(t4)) {
           return 4;
         }
       }
@@ -971,19 +994,19 @@ public class FlatLists {
           return 0;
         }
       } else {
-        if (t4.equals(o)) {
+        if (o.equals(t4)) {
           return 4;
         }
-        if (t3.equals(o)) {
+        if (o.equals(t3)) {
           return 3;
         }
-        if (t2.equals(o)) {
+        if (o.equals(t2)) {
           return 2;
         }
-        if (t1.equals(o)) {
+        if (o.equals(t1)) {
           return 1;
         }
-        if (t0.equals(o)) {
+        if (o.equals(t0)) {
           return 0;
         }
       }
@@ -992,6 +1015,10 @@ public class FlatLists {
 
     @SuppressWarnings({"unchecked" })
     public <T2> T2[] toArray(T2[] a) {
+      if (a.length < 5) {
+        // Make a new array of a's runtime type, but my contents:
+        return (T2[]) Arrays.copyOf(toArray(), 5, a.getClass());
+      }
       a[0] = (T2) t0;
       a[1] = (T2) t1;
       a[2] = (T2) t2;
@@ -1009,7 +1036,7 @@ public class FlatLists {
     }
 
     public List<T> append(T e) {
-      return new Flat6List<T>(t0, t1, t2, t3, t4, e);
+      return new Flat6List<>(t0, t1, t2, t3, t4, e);
     }
   }
 
@@ -1128,22 +1155,22 @@ public class FlatLists {
           return 5;
         }
       } else {
-        if (t0.equals(o)) {
+        if (o.equals(t0)) {
           return 0;
         }
-        if (t1.equals(o)) {
+        if (o.equals(t1)) {
           return 1;
         }
-        if (t2.equals(o)) {
+        if (o.equals(t2)) {
           return 2;
         }
-        if (t3.equals(o)) {
+        if (o.equals(t3)) {
           return 3;
         }
-        if (t4.equals(o)) {
+        if (o.equals(t4)) {
           return 4;
         }
-        if (t5.equals(o)) {
+        if (o.equals(t5)) {
           return 5;
         }
       }
@@ -1171,22 +1198,22 @@ public class FlatLists {
           return 0;
         }
       } else {
-        if (t5.equals(o)) {
+        if (o.equals(t5)) {
           return 5;
         }
-        if (t4.equals(o)) {
+        if (o.equals(t4)) {
           return 4;
         }
-        if (t3.equals(o)) {
+        if (o.equals(t3)) {
           return 3;
         }
-        if (t2.equals(o)) {
+        if (o.equals(t2)) {
           return 2;
         }
-        if (t1.equals(o)) {
+        if (o.equals(t1)) {
           return 1;
         }
-        if (t0.equals(o)) {
+        if (o.equals(t0)) {
           return 0;
         }
       }
@@ -1195,6 +1222,10 @@ public class FlatLists {
 
     @SuppressWarnings({"unchecked" })
     public <T2> T2[] toArray(T2[] a) {
+      if (a.length < 6) {
+        // Make a new array of a's runtime type, but my contents:
+        return (T2[]) Arrays.copyOf(toArray(), 6, a.getClass());
+      }
       a[0] = (T2) t0;
       a[1] = (T2) t1;
       a[2] = (T2) t2;

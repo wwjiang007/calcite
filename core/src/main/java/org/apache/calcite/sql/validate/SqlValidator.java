@@ -42,10 +42,10 @@ import org.apache.calcite.sql.SqlUpdate;
 import org.apache.calcite.sql.SqlWindow;
 import org.apache.calcite.sql.SqlWith;
 import org.apache.calcite.sql.SqlWithItem;
-import org.apache.calcite.util.Util;
 
 import java.util.List;
 import java.util.Map;
+import javax.annotation.Nullable;
 
 /**
  * Validates the parse tree of a SQL statement, and provides semantic
@@ -103,9 +103,6 @@ import java.util.Map;
  * names in a particular clause of a SQL statement.</p>
  */
 public interface SqlValidator {
-  /** Whether to follow the SQL standard strictly. */
-  boolean STRICT = Util.getBooleanProperty("calcite.strict.sql");
-
   //~ Methods ----------------------------------------------------------------
 
   /**
@@ -294,12 +291,14 @@ public interface SqlValidator {
   /**
    * Validates parameters for aggregate function.
    *
-   * @param aggCall     Function containing COLUMN_LIST parameter
-   * @param filter      Filter, or null
+   * @param aggCall     Call to aggregate function
+   * @param filter      Filter ({@code FILTER (WHERE)} clause), or null
+   * @param orderList   Ordering specification ({@code WITHING GROUP} clause),
+   *                    or null
    * @param scope       Syntactic scope
    */
   void validateAggregateParams(SqlCall aggCall, SqlNode filter,
-      SqlValidatorScope scope);
+      SqlNodeList orderList, SqlValidatorScope scope);
 
   /**
    * Validates a COLUMN_LIST parameter
@@ -312,6 +311,13 @@ public interface SqlValidator {
       SqlFunction function,
       List<RelDataType> argTypes,
       List<SqlNode> operands);
+
+  /**
+   * If an identifier is a legitimate call to a function that has no
+   * arguments and requires no parentheses (for example "CURRENT_USER"),
+   * returns a call to that function, otherwise returns null.
+   */
+  @Nullable SqlCall makeNullaryCall(SqlIdentifier id);
 
   /**
    * Derives the type of a node in a given scope. If the type has already been

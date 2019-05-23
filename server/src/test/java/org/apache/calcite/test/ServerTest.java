@@ -125,6 +125,10 @@ public class ServerTest {
     }
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-3046">[CALCITE-3046]
+   * CompileException when inserting casted value of composited user defined type
+   * into table</a>. */
   @Test public void testCreateTable() throws Exception {
     try (Connection c = connect();
          Statement s = c.createStatement()) {
@@ -139,6 +143,27 @@ public class ServerTest {
         assertThat(r.getInt(1), is(4));
         assertThat(r.next(), is(false));
       }
+
+      // CALCITE-2464: Allow to set nullability for columns of structured types
+      b = s.execute("create type mytype as (i int)");
+      assertThat(b, is(false));
+      b = s.execute("create table w (i int not null, j mytype)");
+      assertThat(b, is(false));
+      x = s.executeUpdate("insert into w values (1, NULL)");
+      assertThat(x, is(1));
+    }
+  }
+
+  @Test public void testInsertCastedValueOfCompositeUdt() throws Exception {
+    try (Connection c = connect();
+         Statement s = c.createStatement()) {
+      boolean b = s.execute("create type mytype as (i int, j int)");
+      assertThat(b, is(false));
+      b = s.execute("create table w (i int not null, j mytype)");
+      assertThat(b, is(false));
+      int x = s.executeUpdate("insert into w "
+          + "values (1, cast((select j from w limit 1) as mytype))");
+      assertThat(x, is(1));
     }
   }
 
@@ -307,7 +332,7 @@ public class ServerTest {
       }
 
       final String plan = ""
-          + "EnumerableCalc(expr#0..1=[{inputs}], expr#2=[1], expr#3=[+($t1, $t2)], proj#0..1=[{exprs}], $f2=[$t3])\n"
+          + "EnumerableCalc(expr#0..1=[{inputs}], expr#2=[1], expr#3=[+($t1, $t2)], proj#0..1=[{exprs}], J=[$t3])\n"
           + "  EnumerableTableScan(table=[[T]])\n";
       try (ResultSet r = s.executeQuery("explain plan for " + sql)) {
         assertThat(r.next(), is(true));

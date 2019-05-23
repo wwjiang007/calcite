@@ -19,10 +19,9 @@ package org.apache.calcite.rel.type;
 import org.apache.calcite.linq4j.Ord;
 import org.apache.calcite.sql.type.SqlTypeName;
 
-import com.google.common.base.Preconditions;
-
 import java.io.Serializable;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * RelRecordType represents a structured type having named fields.
@@ -30,21 +29,40 @@ import java.util.List;
 public class RelRecordType extends RelDataTypeImpl implements Serializable {
   /** Name resolution policy; usually {@link StructKind#FULLY_QUALIFIED}. */
   private final StructKind kind;
+  private final boolean nullable;
 
   //~ Constructors -----------------------------------------------------------
 
   /**
    * Creates a <code>RecordType</code>. This should only be called from a
    * factory method.
+   * @param kind Name resolution policy
+   * @param fields List of fields
+   * @param nullable Whether this record type allows null values
    */
-  public RelRecordType(StructKind kind, List<RelDataTypeField> fields) {
+  public RelRecordType(StructKind kind, List<RelDataTypeField> fields, boolean nullable) {
     super(fields);
-    this.kind = Preconditions.checkNotNull(kind);
+    this.nullable = nullable;
+    this.kind = Objects.requireNonNull(kind);
     computeDigest();
   }
 
+  /**
+   * Creates a <code>RecordType</code>. This should only be called from a
+   * factory method.
+   * Shorthand for <code>RelRecordType(kind, fields, false)</code>.
+   */
+  public RelRecordType(StructKind kind, List<RelDataTypeField> fields) {
+    this(kind, fields, false);
+  }
+
+  /**
+   * Creates a <code>RecordType</code>. This should only be called from a
+   * factory method.
+   * Shorthand for <code>RelRecordType(StructKind.FULLY_QUALIFIED, fields, false)</code>.
+   */
   public RelRecordType(List<RelDataTypeField> fields) {
-    this(StructKind.FULLY_QUALIFIED, fields);
+    this(StructKind.FULLY_QUALIFIED, fields, false);
   }
 
   //~ Methods ----------------------------------------------------------------
@@ -54,7 +72,7 @@ public class RelRecordType extends RelDataTypeImpl implements Serializable {
   }
 
   @Override public boolean isNullable() {
-    return false;
+    return nullable;
   }
 
   @Override public int getPrecision() {

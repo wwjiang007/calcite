@@ -216,7 +216,7 @@ If you have a particular `RelNode` instance, you can rely on the field names not
 changing. In fact, the whole relational expression is immutable.
 
 But if a relational expression has passed through several rewrite rules (see
-([RelOptRule]({{ site.apiRoot }}/org/apache/calcite/plan/RelOptRule.html)), the field
+[RelOptRule]({{ site.apiRoot }}/org/apache/calcite/plan/RelOptRule.html)), the field
 names of the resulting expression might not look much like the originals.
 At that point it is better to reference fields by ordinal.
 
@@ -259,9 +259,11 @@ return the `RelBuilder`.
 | Method              | Description
 |:------------------- |:-----------
 | `scan(tableName)` | Creates a [TableScan]({{ site.apiRoot }}/org/apache/calcite/rel/core/TableScan.html).
+| `functionScan(operator, n, expr...)`<br/>`functionScan(operator, n, exprList)` | Creates a [TableFunctionScan]({{ site.apiRoot }}/org/apache/calcite/rel/core/TableFunctionScan.html) of the `n` most recent relational expressions.
 | `values(fieldNames, value...)`<br/>`values(rowType, tupleList)` | Creates a [Values]({{ site.apiRoot }}/org/apache/calcite/rel/core/Values.html).
 | `filter(expr...)`<br/>`filter(exprList)` | Creates a [Filter]({{ site.apiRoot }}/org/apache/calcite/rel/core/Filter.html) over the AND of the given predicates.
 | `project(expr...)`<br/>`project(exprList [, fieldNames])` | Creates a [Project]({{ site.apiRoot }}/org/apache/calcite/rel/core/Project.html). To override the default name, wrap expressions using `alias`, or specify the `fieldNames` argument.
+| `projectPlus(expr...)`<br/>`projectPlus(exprList)` | Variant of `project` that keeps original fields and appends the given expressions.
 | `permute(mapping)` | Creates a [Project]({{ site.apiRoot }}/org/apache/calcite/rel/core/Project.html) that permutes the fields using `mapping`.
 | `convert(rowType [, rename])` | Creates a [Project]({{ site.apiRoot }}/org/apache/calcite/rel/core/Project.html) that converts the fields to the given types, optionally also renaming them.
 | `aggregate(groupKey, aggCall...)`<br/>`aggregate(groupKey, aggCallList)` | Creates an [Aggregate]({{ site.apiRoot }}/org/apache/calcite/rel/core/Aggregate.html).
@@ -269,11 +271,15 @@ return the `RelBuilder`.
 | `sort(fieldOrdinal...)`<br/>`sort(expr...)`<br/>`sort(exprList)` | Creates a [Sort]({{ site.apiRoot }}/org/apache/calcite/rel/core/Sort.html).<br/><br/>In the first form, field ordinals are 0-based, and a negative ordinal indicates descending; for example, -2 means field 1 descending.<br/><br/>In the other forms, you can wrap expressions in `as`, `nullsFirst` or `nullsLast`.
 | `sortLimit(offset, fetch, expr...)`<br/>`sortLimit(offset, fetch, exprList)` | Creates a [Sort]({{ site.apiRoot }}/org/apache/calcite/rel/core/Sort.html) with offset and limit.
 | `limit(offset, fetch)` | Creates a [Sort]({{ site.apiRoot }}/org/apache/calcite/rel/core/Sort.html) that does not sort, only applies with offset and limit.
+| `exchange(distribution)` | Creates an [Exchange]({{ site.apiRoot }}/org/apache/calcite/rel/core/Exchange.html).
+| `sortExchange(distribution, collation)` | Creates a [SortExchange]({{ site.apiRoot }}/org/apache/calcite/rel/core/SortExchange.html).
 | `join(joinType, expr...)`<br/>`join(joinType, exprList)`<br/>`join(joinType, fieldName...)` | Creates a [Join]({{ site.apiRoot }}/org/apache/calcite/rel/core/Join.html) of the two most recent relational expressions.<br/><br/>The first form joins on a boolean expression (multiple conditions are combined using AND).<br/><br/>The last form joins on named fields; each side must have a field of each name.
 | `semiJoin(expr)` | Creates a [SemiJoin]({{ site.apiRoot }}/org/apache/calcite/rel/core/SemiJoin.html) of the two most recent relational expressions.
+| `antiJoin(expr)` | Creates an AntiJoin of the two most recent relational expressions.
 | `union(all [, n])` | Creates a [Union]({{ site.apiRoot }}/org/apache/calcite/rel/core/Union.html) of the `n` (default two) most recent relational expressions.
 | `intersect(all [, n])` | Creates an [Intersect]({{ site.apiRoot }}/org/apache/calcite/rel/core/Intersect.html) of the `n` (default two) most recent relational expressions.
 | `minus(all)` | Creates a [Minus]({{ site.apiRoot }}/org/apache/calcite/rel/core/Minus.html) of the two most recent relational expressions.
+| `snapshot(period)` | Creates a [Snapshot]({{ site.apiRoot }}/org/apache/calcite/rel/core/Snapshot.html) of the given snapshot period.
 | `match(pattern, strictStart,` `strictEnd, patterns, measures,` `after, subsets, allRows,` `partitionKeys, orderKeys,` `interval)` | Creates a [Match]({{ site.apiRoot }}/org/apache/calcite/rel/core/Match.html).
 
 Argument types:
@@ -298,6 +304,9 @@ Argument types:
 * `varHolder` [Holder]({{ site.apiRoot }}/org/apache/calcite/util/Holder.html) of [RexCorrelVariable]({{ site.apiRoot }}/org/apache/calcite/rex/RexCorrelVariable.html)
 * `patterns` Map whose key is String, value is [RexNode]({{ site.apiRoot }}/org/apache/calcite/rex/RexNode.html)
 * `subsets` Map whose key is String, value is a sorted set of String
+* `distribution` [RelDistribution]({{ site.apiRoot }}/org/apache/calcite/rel/RelDistribution.html)
+* `collation` [RelCollation]({{ site.apiRoot }}/org/apache/calcite/rel/RelCollation.html)
+* `operator` [SqlOperator]({{ site.apiRoot }}/org/apache/calcite/sql/SqlOperator.html)
 
 The builder methods perform various optimizations, including:
 
@@ -314,7 +323,7 @@ expression on the stack:
 | `as(alias)`         | Assigns a table alias to the top relational expression on the stack
 | `variable(varHolder)` | Creates a correlation variable referencing the top relational expression
 
-### Stack methods
+#### Stack methods
 
 | Method              | Description
 |:------------------- |:-----------
@@ -358,6 +367,7 @@ added to the stack.
 | `desc(expr)` | Changes sort direction to descending (only valid as an argument to `sort` or `sortLimit`)
 | `nullsFirst(expr)` | Changes sort order to nulls first (only valid as an argument to `sort` or `sortLimit`)
 | `nullsLast(expr)` | Changes sort order to nulls last (only valid as an argument to `sort` or `sortLimit`)
+| `cursor(n, input)` | Reference to `input`th (0-based) relational input of a `TableFunctionScan` with `n` inputs (see `functionScan`)
 
 #### Pattern methods
 
@@ -371,7 +381,7 @@ The following methods return patterns for use in `match`.
 | `patternPermute(pattern...)` | Permutes a pattern
 | `patternExclude(pattern)` | Excludes a pattern
 
-### Group key methods
+#### Group key methods
 
 The following methods return a
 [RelBuilder.GroupKey]({{ site.apiRoot }}/org/apache/calcite/tools/RelBuilder.GroupKey.html).
@@ -380,18 +390,30 @@ The following methods return a
 |:------------------- |:-----------
 | `groupKey(fieldName...)`<br/>`groupKey(fieldOrdinal...)`<br/>`groupKey(expr...)`<br/>`groupKey(exprList)` | Creates a group key of the given expressions
 | `groupKey(exprList, exprListList)` | Creates a group key of the given expressions with grouping sets
-| `groupKey(bitSet, bitSets)` | Creates a group key of the given input columns with grouping sets
+| `groupKey(bitSet [, bitSets])` | Creates a group key of the given input columns, with multiple grouping sets if `bitSets` is specified
 
-### Aggregate call methods
+#### Aggregate call methods
 
 The following methods return an
 [RelBuilder.AggCall]({{ site.apiRoot }}/org/apache/calcite/tools/RelBuilder.AggCall.html).
 
 | Method              | Description
 |:------------------- |:-----------
-| `aggregateCall(op, distinct, approximate, filter, alias, expr...)`<br/>`aggregateCall(op, distinct, approximate, filter, alias, exprList)` | Creates a call to a given aggregate function, with an optional filter expression
-| `count(distinct, alias, expr...)` | Creates a call to the COUNT aggregate function
-| `countStar(alias)` | Creates a call to the COUNT(*) aggregate function
-| `sum(distinct, alias, expr)` | Creates a call to the SUM aggregate function
-| `min(alias, expr)` | Creates a call to the MIN aggregate function
-| `max(alias, expr)` | Creates a call to the MAX aggregate function
+| `aggregateCall(op, expr...)`<br/>`aggregateCall(op, exprList)` | Creates a call to a given aggregate function
+| `count([ distinct, alias, ] expr...)`<br/>`count([ distinct, alias, ] exprList)` | Creates a call to the `COUNT` aggregate function
+| `countStar(alias)` | Creates a call to the `COUNT(*)` aggregate function
+| `sum([ distinct, alias, ] expr)` | Creates a call to the `SUM` aggregate function
+| `min([ alias, ] expr)` | Creates a call to the `MIN` aggregate function
+| `max([ alias, ] expr)` | Creates a call to the `MAX` aggregate function
+
+To further modify the `AggCall`, call its methods:
+
+| Method               | Description
+|:-------------------- |:-----------
+| `approximate(approximate)` | Allows approximate value for the aggregate of `approximate`
+| `as(alias)`          | Assigns a column alias to this expression (see SQL `AS`)
+| `distinct()`         | Eliminates duplicate values before aggregating (see SQL `DISTINCT`)
+| `distinct(distinct)` | Eliminates duplicate values before aggregating if `distinct`
+| `filter(expr)`       | Filters rows before aggregating (see SQL `FILTER (WHERE ...)`)
+| `sort(expr...)`<br/>`sort(exprList)` | Sorts rows before aggregating (see SQL `WITHIN GROUP`)
+

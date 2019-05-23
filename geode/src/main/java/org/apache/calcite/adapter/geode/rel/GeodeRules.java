@@ -39,23 +39,22 @@ import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
 
-import com.google.common.base.Predicate;
-
-import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * Rules and relational operators for {@link GeodeRel#CONVENTION} calling convention.
  */
 public class GeodeRules {
 
-  public static final RelOptRule[] RULES = {
+  static final RelOptRule[] RULES = {
+      GeodeSortLimitRule.INSTANCE,
       GeodeFilterRule.INSTANCE,
       GeodeProjectRule.INSTANCE,
-      GeodeSortLimitRule.INSTANCE,
-      GeodeAggregateRule.INSTANCE
+      GeodeAggregateRule.INSTANCE,
   };
+
 
   private GeodeRules() {
   }
@@ -80,18 +79,7 @@ public class GeodeRules {
   }
 
   static List<String> geodeFieldNames(final RelDataType rowType) {
-
-    List<String> fieldNames = new AbstractList<String>() {
-      @Override public String get(int index) {
-        return rowType.getFieldList().get(index).getName();
-      }
-
-      @Override public int size() {
-        return rowType.getFieldCount();
-      }
-    };
-
-    return SqlValidatorUtil.uniquify(fieldNames, true);
+    return SqlValidatorUtil.uniquify(rowType.getFieldNames(), true);
   }
 
   /**
@@ -208,15 +196,11 @@ public class GeodeRules {
 
     private static final GeodeSortLimitRule INSTANCE =
         new GeodeSortLimitRule(
-          new Predicate<Sort>() {
-            public boolean apply(Sort input) {
-              // OQL doesn't support for offsets (e.g. LIMIT 10 OFFSET 500)
-              return input.offset == null;
-            }
-          });
+            // OQL doesn't support for offsets (e.g. LIMIT 10 OFFSET 500)
+            sort -> sort.offset == null);
 
     GeodeSortLimitRule(Predicate<Sort> predicate) {
-      super(operand(Sort.class, null, predicate, any()), "GeodeSortLimitRule");
+      super(operandJ(Sort.class, null, predicate, any()), "GeodeSortLimitRule");
     }
 
     @Override public void onMatch(RelOptRuleCall call) {
@@ -279,6 +263,14 @@ public class GeodeRules {
      */
     private boolean isEqualityOnKey(RexNode node, List<String> fieldNames) {
 
+      if (isBooleanColumnReference(node, fieldNames)) {
+        return true;
+      }
+
+      if (!SqlKind.COMPARISON.contains(node.getKind())) {
+        return false;
+      }
+
       RexCall call = (RexCall) node;
       final RexNode left = call.operands.get(0);
       final RexNode right = call.operands.get(1);
@@ -288,6 +280,24 @@ public class GeodeRules {
       }
       return checkConditionContainsInputRefOrLiterals(right, left, fieldNames);
 
+    }
+
+    private boolean isBooleanColumnReference(RexNode node, List<String> fieldNames) {
+      // FIXME Ignore casts for rel and assume they aren't really necessary
+      if (node.isA(SqlKind.CAST)) {
+        node = ((RexCall) node).getOperands().get(0);
+      }
+      if (node.isA(SqlKind.NOT)) {
+        node = ((RexCall) node).getOperands().get(0);
+      }
+      if (node.isA(SqlKind.INPUT_REF)) {
+        if (node.getType().getSqlTypeName() == SqlTypeName.BOOLEAN) {
+          final RexInputRef left1 = (RexInputRef) node;
+          String name = fieldNames.get(left1.getIndex());
+          return name != null;
+        }
+      }
+      return false;
     }
 
     /**

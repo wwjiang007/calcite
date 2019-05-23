@@ -20,12 +20,12 @@ limitations under the License.
   <parent>
     <groupId>org.apache.calcite</groupId>
     <artifactId>calcite-example</artifactId>
-    <version>1.17.0-SNAPSHOT</version>
+    <version>1.20.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>calcite-example-csv</artifactId>
   <packaging>jar</packaging>
-  <version>1.17.0-SNAPSHOT</version>
+  <version>1.20.0-SNAPSHOT</version>
   <name>Calcite Example CSV</name>
   <description>An example Calcite provider that reads CSV files</description>
 
@@ -57,6 +57,12 @@ limitations under the License.
       <artifactId>guava</artifactId>
     </dependency>
     <dependency>
+      <groupId>org.apache.calcite</groupId>
+      <artifactId>calcite-core</artifactId>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
       <scope>test</scope>
@@ -64,6 +70,11 @@ limitations under the License.
     <dependency>
       <groupId>net.sf.opencsv</groupId>
       <artifactId>opencsv</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.calcite.avatica</groupId>
+      <artifactId>avatica-core</artifactId>
+      <type>jar</type>
     </dependency>
     <dependency>
       <groupId>org.apache.commons</groupId>
