@@ -63,7 +63,7 @@ public class TableScanNode implements Node {
     compiler.enumerable(rel, enumerable);
   }
 
-  public void run() {
+  @Override public void run() {
     // nothing to do
   }
 
@@ -287,5 +287,3 @@ public class TableScanNode implements Node {
     return new TableScanNode(compiler, rel, enumerable);
   }
 }
-
-// End TableScanNode.java

@@ -42,7 +42,7 @@ public interface SqlValidatorTable extends Wrapper {
   SqlMonotonicity getMonotonicity(String columnName);
 
   /**
-   * Returns the access type of the table
+   * Returns the access type of the table.
    */
   SqlAccessType getAllowedAccess();
 
@@ -61,5 +61,3 @@ public interface SqlValidatorTable extends Wrapper {
       InitializerContext initializerContext);
 
 }
-
-// End SqlValidatorTable.java

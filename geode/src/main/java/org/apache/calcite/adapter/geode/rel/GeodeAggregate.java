@@ -29,8 +29,8 @@ import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.Util;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableMap.Builder;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -46,11 +46,10 @@ public class GeodeAggregate extends Aggregate implements GeodeRel {
   public GeodeAggregate(RelOptCluster cluster,
       RelTraitSet traitSet,
       RelNode input,
-      boolean indicator,
       ImmutableBitSet groupSet,
       List<ImmutableBitSet> groupSets,
       List<AggregateCall> aggCalls) {
-    super(cluster, traitSet, input, indicator, groupSet, groupSets, aggCalls);
+    super(cluster, traitSet, ImmutableList.of(), input, groupSet, groupSets, aggCalls);
 
     assert getConvention() == GeodeRel.CONVENTION;
     assert getConvention() == this.input.getConvention();
@@ -64,11 +63,23 @@ public class GeodeAggregate extends Aggregate implements GeodeRel {
     }
   }
 
-  @Override public Aggregate copy(RelTraitSet traitSet, RelNode input, boolean indicator,
+  @Deprecated // to be removed before 2.0
+  public GeodeAggregate(RelOptCluster cluster,
+      RelTraitSet traitSet,
+      RelNode input,
+      boolean indicator,
+      ImmutableBitSet groupSet,
+      List<ImmutableBitSet> groupSets,
+      List<AggregateCall> aggCalls) {
+    this(cluster, traitSet, input, groupSet, groupSets, aggCalls);
+    checkIndicator(indicator);
+  }
+
+  @Override public Aggregate copy(RelTraitSet traitSet, RelNode input,
       ImmutableBitSet groupSet, List<ImmutableBitSet> groupSets,
       List<AggregateCall> aggCalls) {
-    return new GeodeAggregate(getCluster(), traitSet, input, indicator, groupSet, groupSets,
-        aggCalls);
+    return new GeodeAggregate(getCluster(), traitSet, input, groupSet,
+        groupSets, aggCalls);
   }
 
   @Override public RelOptCost computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq) {
@@ -89,7 +100,7 @@ public class GeodeAggregate extends Aggregate implements GeodeRel {
     geodeImplementContext.addGroupBy(groupByFields);
 
     // Find the aggregate functions (e.g. MAX, SUM ...)
-    Builder<String, String> aggregateFunctionMap = ImmutableMap.builder();
+    ImmutableMap.Builder<String, String> aggregateFunctionMap = ImmutableMap.builder();
     for (AggregateCall aggCall : aggCalls) {
 
       List<String> aggCallFieldNames = new ArrayList<>();
@@ -124,5 +135,3 @@ public class GeodeAggregate extends Aggregate implements GeodeRel {
     return names;
   }
 }
-
-// End GeodeAggregate.java

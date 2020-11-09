@@ -149,7 +149,7 @@ public class Like {
   private static RuntimeException invalidRegularExpression(
       String pattern, int i) {
     return new RuntimeException(
-        "Invalid regular expression '" + pattern + "'");
+        "Invalid regular expression '" + pattern + "', index " + i);
   }
 
   private static int sqlSimilarRewriteCharEnumeration(
@@ -302,5 +302,3 @@ public class Like {
     return javaPattern.toString();
   }
 }
-
-// End Like.java

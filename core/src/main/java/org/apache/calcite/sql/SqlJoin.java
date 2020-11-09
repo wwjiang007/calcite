@@ -74,7 +74,7 @@ public class SqlJoin extends SqlCall {
 
   //~ Methods ----------------------------------------------------------------
 
-  public SqlOperator getOperator() {
+  @Override public SqlOperator getOperator() {
     return OPERATOR;
   }
 
@@ -82,7 +82,7 @@ public class SqlJoin extends SqlCall {
     return SqlKind.JOIN;
   }
 
-  public List<SqlNode> getOperandList() {
+  @Override public List<SqlNode> getOperandList() {
     return ImmutableNullableList.of(left, natural, joinType, right,
         conditionType, condition);
   }
@@ -175,11 +175,11 @@ public class SqlJoin extends SqlCall {
 
     //~ Methods ----------------------------------------------------------------
 
-    public SqlSyntax getSyntax() {
+    @Override public SqlSyntax getSyntax() {
       return SqlSyntax.SPECIAL;
     }
 
-    public SqlCall createCall(
+    @Override public SqlCall createCall(
         SqlLiteral functionQualifier,
         SqlParserPos pos,
         SqlNode... operands) {
@@ -196,37 +196,32 @@ public class SqlJoin extends SqlCall {
         int rightPrec) {
       final SqlJoin join = (SqlJoin) call;
 
-      final SqlWriter.Frame joinFrame =
-          writer.startList(SqlWriter.FrameTypeEnum.JOIN);
       join.left.unparse(
           writer,
           leftPrec,
           getLeftPrec());
-      String natural = "";
-      if (join.isNatural()) {
-        natural = "NATURAL ";
-      }
       switch (join.getJoinType()) {
       case COMMA:
         writer.sep(",", true);
         break;
       case CROSS:
-        writer.sep(natural + "CROSS JOIN");
+        writer.sep(join.isNatural() ? "NATURAL CROSS JOIN" : "CROSS JOIN");
         break;
       case FULL:
-        writer.sep(natural + "FULL JOIN");
+        writer.sep(join.isNatural() ? "NATURAL FULL JOIN" : "FULL JOIN");
         break;
       case INNER:
-        writer.sep(natural + "INNER JOIN");
+        writer.sep(join.isNatural() ? "NATURAL INNER JOIN" : "INNER JOIN");
         break;
       case LEFT:
-        writer.sep(natural + "LEFT JOIN");
+        writer.sep(join.isNatural() ? "NATURAL LEFT JOIN" : "LEFT JOIN");
         break;
       case LEFT_SEMI_JOIN:
-        writer.sep(natural + "LEFT SEMI JOIN");
+        writer.sep(join.isNatural() ? "NATURAL LEFT SEMI JOIN"
+            : "LEFT SEMI JOIN");
         break;
       case RIGHT:
-        writer.sep(natural + "RIGHT JOIN");
+        writer.sep(join.isNatural() ? "NATURAL RIGHT JOIN" : "RIGHT JOIN");
         break;
       default:
         throw Util.unexpected(join.getJoinType());
@@ -254,9 +249,6 @@ public class SqlJoin extends SqlCall {
           throw Util.unexpected(join.getConditionType());
         }
       }
-      writer.endList(joinFrame);
     }
   }
 }
-
-// End SqlJoin.java

@@ -299,18 +299,34 @@ public interface ExtendedEnumerable<TSource> {
 
   /**
    * Produces the set difference of two sequences by
-   * using the default equality comparer to compare values. (Defined
-   * by Enumerable.)
+   * using the default equality comparer to compare values,
+   * eliminate duplicates. (Defined by Enumerable.)
    */
   Enumerable<TSource> except(Enumerable<TSource> enumerable1);
 
   /**
    * Produces the set difference of two sequences by
+   * using the default equality comparer to compare values,
+   * using {@code all} to indicate whether to eliminate duplicates.
+   * (Defined by Enumerable.)
+   */
+  Enumerable<TSource> except(Enumerable<TSource> enumerable1, boolean all);
+
+  /**
+   * Produces the set difference of two sequences by
    * using the specified {@code EqualityComparer<TSource>} to compare
-   * values.
+   * values, eliminate duplicates.
    */
   Enumerable<TSource> except(Enumerable<TSource> enumerable1,
       EqualityComparer<TSource> comparer);
+
+  /**
+   * Produces the set difference of two sequences by
+   * using the specified {@code EqualityComparer<TSource>} to compare
+   * values, using {@code all} to indicate whether to eliminate duplicates.
+   */
+  Enumerable<TSource> except(Enumerable<TSource> enumerable1,
+      EqualityComparer<TSource> comparer, boolean all);
 
   /**
    * Returns the first element of a sequence. (Defined
@@ -444,6 +460,23 @@ public interface ExtendedEnumerable<TSource> {
       EqualityComparer<TKey> comparer);
 
   /**
+   * Group keys are sorted already. Key values are compared by using a
+   * specified comparator. Groups the elements of a sequence according to a
+   * specified key selector function and initializing one accumulator at a time.
+   * Go over elements sequentially, adding to accumulator each time an element
+   * with the same key is seen. When key changes, creates a result value from the
+   * accumulator and then re-initializes the accumulator. In the case of NULL values
+   * in group keys, the comparator must be able to support NULL values by giving a
+   * consistent sort ordering.
+   */
+  <TKey, TAccumulate, TResult> Enumerable<TResult> sortedGroupBy(
+      Function1<TSource, TKey> keySelector,
+      Function0<TAccumulate> accumulatorInitializer,
+      Function2<TAccumulate, TSource, TAccumulate> accumulatorAdder,
+      Function2<TKey, TAccumulate, TResult> resultSelector,
+      Comparator<TKey> comparator);
+
+  /**
    * Correlates the elements of two sequences based on
    * equality of keys and groups the results. The default equality
    * comparer is used to compare keys.
@@ -466,19 +499,34 @@ public interface ExtendedEnumerable<TSource> {
 
   /**
    * Produces the set intersection of two sequences by
-   * using the default equality comparer to compare values. (Defined
-   * by Enumerable.)
+   * using the default equality comparer to compare values,
+   * eliminate duplicates. (Defined by Enumerable.)
    */
   Enumerable<TSource> intersect(Enumerable<TSource> enumerable1);
 
   /**
    * Produces the set intersection of two sequences by
+   * using the default equality comparer to compare values,
+   * using {@code all} to indicate whether to eliminate duplicates.
+   * (Defined by Enumerable.)
+   */
+  Enumerable<TSource> intersect(Enumerable<TSource> enumerable1, boolean all);
+
+  /**
+   * Produces the set intersection of two sequences by
    * using the specified {@code EqualityComparer<TSource>} to compare
-   * values.
+   * values, eliminate duplicates.
    */
   Enumerable<TSource> intersect(Enumerable<TSource> enumerable1,
       EqualityComparer<TSource> comparer);
 
+  /**
+   * Produces the set intersection of two sequences by
+   * using the specified {@code EqualityComparer<TSource>} to compare
+   * values, using {@code all} to indicate whether to eliminate duplicates.
+   */
+  Enumerable<TSource> intersect(Enumerable<TSource> enumerable1,
+      EqualityComparer<TSource> comparer, boolean all);
   /**
    * Copies the contents of this sequence into a collection.
    */
@@ -494,7 +542,7 @@ public interface ExtendedEnumerable<TSource> {
    * matching keys. The default equality comparer is used to compare
    * keys.
    */
-  <TInner, TKey, TResult> Enumerable<TResult> join(Enumerable<TInner> inner,
+  <TInner, TKey, TResult> Enumerable<TResult> hashJoin(Enumerable<TInner> inner,
       Function1<TSource, TKey> outerKeySelector,
       Function1<TInner, TKey> innerKeySelector,
       Function2<TSource, TInner, TResult> resultSelector);
@@ -504,7 +552,7 @@ public interface ExtendedEnumerable<TSource> {
    * matching keys. A specified {@code EqualityComparer<TSource>} is used to
    * compare keys.
    */
-  <TInner, TKey, TResult> Enumerable<TResult> join(Enumerable<TInner> inner,
+  <TInner, TKey, TResult> Enumerable<TResult> hashJoin(Enumerable<TInner> inner,
       Function1<TSource, TKey> outerKeySelector,
       Function1<TInner, TKey> innerKeySelector,
       Function2<TSource, TInner, TResult> resultSelector,
@@ -530,12 +578,42 @@ public interface ExtendedEnumerable<TSource> {
    *   <tr><td>FULL</td><td>true</td><td>true</td></tr>
    * </table>
    */
-  <TInner, TKey, TResult> Enumerable<TResult> join(Enumerable<TInner> inner,
+  <TInner, TKey, TResult> Enumerable<TResult> hashJoin(Enumerable<TInner> inner,
       Function1<TSource, TKey> outerKeySelector,
       Function1<TInner, TKey> innerKeySelector,
       Function2<TSource, TInner, TResult> resultSelector,
       EqualityComparer<TKey> comparer,
       boolean generateNullsOnLeft, boolean generateNullsOnRight);
+
+  /**
+   * Correlates the elements of two sequences based on matching keys, with
+   * optional outer join semantics. A specified
+   * {@code EqualityComparer<TSource>} is used to compare keys.
+   *
+   * <p>A left join generates nulls on right, and vice versa:</p>
+   *
+   * <table>
+   *   <caption>Join types</caption>
+   *   <tr>
+   *     <td>Join type</td>
+   *     <td>generateNullsOnLeft</td>
+   *     <td>generateNullsOnRight</td>
+   *   </tr>
+   *   <tr><td>INNER</td><td>false</td><td>false</td></tr>
+   *   <tr><td>LEFT</td><td>false</td><td>true</td></tr>
+   *   <tr><td>RIGHT</td><td>true</td><td>false</td></tr>
+   *   <tr><td>FULL</td><td>true</td><td>true</td></tr>
+   * </table>
+   *
+   * <p>A predicate is used to filter the join result per-row</p>
+   */
+  <TInner, TKey, TResult> Enumerable<TResult> hashJoin(Enumerable<TInner> inner,
+      Function1<TSource, TKey> outerKeySelector,
+      Function1<TInner, TKey> innerKeySelector,
+      Function2<TSource, TInner, TResult> resultSelector,
+      EqualityComparer<TKey> comparer,
+      boolean generateNullsOnLeft, boolean generateNullsOnRight,
+      Predicate2<TSource, TInner> predicate);
 
   /**
    * For each row of the current enumerable returns the correlated rows
@@ -547,7 +625,7 @@ public interface ExtendedEnumerable<TSource> {
    *                       inner argument is always null.
    */
   <TInner, TResult> Enumerable<TResult> correlateJoin(
-      CorrelateJoinType joinType, Function1<TSource, Enumerable<TInner>> inner,
+      JoinType joinType, Function1<TSource, Enumerable<TInner>> inner,
       Function2<TSource, TInner, TResult> resultSelector);
 
   /**
@@ -1107,5 +1185,3 @@ public interface ExtendedEnumerable<TSource> {
   <T1, TResult> Enumerable<TResult> zip(Enumerable<T1> source1,
       Function2<TSource, T1, TResult> resultSelector);
 }
-
-// End ExtendedEnumerable.java

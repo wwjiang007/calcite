@@ -25,10 +25,10 @@ import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlWindow;
 import org.apache.calcite.util.Pair;
+import org.apache.calcite.util.Util;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -70,6 +70,7 @@ public interface SqlValidatorScope {
   void resolve(List<String> names, SqlNameMatcher nameMatcher, boolean deep,
       Resolved resolved);
 
+  // CHECKSTYLE: IGNORE 1
   /** @deprecated Use
    * {@link #findQualifyingTableNames(String, SqlNode, SqlNameMatcher)} */
   @Deprecated // to be removed before 2.0
@@ -177,6 +178,7 @@ public interface SqlValidatorScope {
    */
   void validateExpr(SqlNode expr);
 
+  // CHECKSTYLE: IGNORE 1
   /** @deprecated Use
    * {@link #resolveTable(List, SqlNameMatcher, Path, Resolved)}. */
   @Deprecated // to be removed before 2.0
@@ -240,7 +242,7 @@ public interface SqlValidatorScope {
 
     /** Returns a list ["step1", "step2"]. */
     List<String> stepNames() {
-      return Lists.transform(steps(), input -> input.name);
+      return Util.transform(steps(), input -> input.name);
     }
 
     protected void build(ImmutableList.Builder<Step> paths) {
@@ -276,7 +278,7 @@ public interface SqlValidatorScope {
       return 1 + parent.stepCount();
     }
 
-    protected void build(ImmutableList.Builder<Step> paths) {
+    @Override protected void build(ImmutableList.Builder<Step> paths) {
       parent.build(paths);
       paths.add(this);
     }
@@ -287,7 +289,7 @@ public interface SqlValidatorScope {
   class ResolvedImpl implements Resolved {
     final List<Resolve> resolves = new ArrayList<>();
 
-    public void found(SqlValidatorNamespace namespace, boolean nullable,
+    @Override public void found(SqlValidatorNamespace namespace, boolean nullable,
         SqlValidatorScope scope, Path path, List<String> remainingNames) {
       if (scope instanceof TableScope) {
         scope = scope.getValidator().getSelectScope((SqlSelect) scope.getNode());
@@ -300,7 +302,7 @@ public interface SqlValidatorScope {
           new Resolve(namespace, nullable, scope, path, remainingNames));
     }
 
-    public int count() {
+    @Override public int count() {
       return resolves.size();
     }
 
@@ -343,5 +345,3 @@ public interface SqlValidatorScope {
     }
   }
 }
-
-// End SqlValidatorScope.java

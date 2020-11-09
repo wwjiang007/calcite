@@ -56,11 +56,7 @@ public class SqlInfixOperator extends SqlSpecialOperator {
 
   //~ Methods ----------------------------------------------------------------
 
-  public SqlSyntax getSyntax() {
-    return SqlSyntax.SPECIAL;
-  }
-
-  public void unparse(
+  @Override public void unparse(
       SqlWriter writer,
       SqlCall call,
       int leftPrec,
@@ -77,5 +73,3 @@ public class SqlInfixOperator extends SqlSpecialOperator {
     }
   }
 }
-
-// End SqlInfixOperator.java

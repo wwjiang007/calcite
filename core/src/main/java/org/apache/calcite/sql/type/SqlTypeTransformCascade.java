@@ -19,12 +19,15 @@ package org.apache.calcite.sql.type;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.SqlOperatorBinding;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+
+import java.util.Objects;
 
 /**
  * Strategy to infer the type of an operator call from the type of the operands
  * by using one {@link SqlReturnTypeInference} rule and a combination of
- * {@link SqlTypeTransform}s
+ * {@link SqlTypeTransform}s.
  */
 public class SqlTypeTransformCascade implements SqlReturnTypeInference {
   //~ Instance fields --------------------------------------------------------
@@ -41,15 +44,14 @@ public class SqlTypeTransformCascade implements SqlReturnTypeInference {
   public SqlTypeTransformCascade(
       SqlReturnTypeInference rule,
       SqlTypeTransform... transforms) {
-    assert rule != null;
-    assert transforms.length > 0;
-    this.rule = rule;
+    Preconditions.checkArgument(transforms.length > 0);
+    this.rule = Objects.requireNonNull(rule);
     this.transforms = ImmutableList.copyOf(transforms);
   }
 
   //~ Methods ----------------------------------------------------------------
 
-  public RelDataType inferReturnType(
+  @Override public RelDataType inferReturnType(
       SqlOperatorBinding opBinding) {
     RelDataType ret = rule.inferReturnType(opBinding);
     if (ret == null) {
@@ -63,5 +65,3 @@ public class SqlTypeTransformCascade implements SqlReturnTypeInference {
     return ret;
   }
 }
-
-// End SqlTypeTransformCascade.java

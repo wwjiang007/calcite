@@ -21,7 +21,7 @@ import java.lang.reflect.Type;
 import java.util.Objects;
 
 /**
- * Represents a length field of a RecordType
+ * Length field of a RecordType.
  */
 public class ArrayLengthRecordField implements Types.RecordField {
   private final String fieldName;
@@ -34,27 +34,27 @@ public class ArrayLengthRecordField implements Types.RecordField {
     this.clazz = clazz;
   }
 
-  public boolean nullable() {
+  @Override public boolean nullable() {
     return false;
   }
 
-  public String getName() {
+  @Override public String getName() {
     return fieldName;
   }
 
-  public Type getType() {
+  @Override public Type getType() {
     return int.class;
   }
 
-  public int getModifiers() {
+  @Override public int getModifiers() {
     return 0;
   }
 
-  public Object get(Object o) throws IllegalAccessException {
+  @Override public Object get(Object o) throws IllegalAccessException {
     return Array.getLength(o);
   }
 
-  public Type getDeclaringClass() {
+  @Override public Type getDeclaringClass() {
     return clazz;
   }
 
@@ -82,5 +82,3 @@ public class ArrayLengthRecordField implements Types.RecordField {
     return Objects.hash(fieldName, clazz);
   }
 }
-
-// End ArrayLengthRecordField.java

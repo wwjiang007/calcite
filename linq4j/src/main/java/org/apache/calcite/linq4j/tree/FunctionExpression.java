@@ -42,9 +42,7 @@ public final class FunctionExpression<F extends Function<?>>
   public final BlockStatement body;
   public final List<ParameterExpression> parameterList;
   private F dynamicFunction;
-  /**
-   * Cache the hash code for the expression
-   */
+  /** Cached hash code for the expression. */
   private int hash;
 
   private FunctionExpression(Class<F> type, F function, BlockStatement body,
@@ -74,7 +72,7 @@ public final class FunctionExpression<F extends Function<?>>
     return shuttle.visit(this, body);
   }
 
-  public <R> R accept(Visitor<R> visitor) {
+  @Override public <R> R accept(Visitor<R> visitor) {
     return visitor.visit(this);
   }
 
@@ -271,5 +269,3 @@ public final class FunctionExpression<F extends Function<?>>
     Object dynamicInvoke(Object... args);
   }
 }
-
-// End FunctionExpression.java

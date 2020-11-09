@@ -28,8 +28,11 @@ import org.apache.calcite.sql.SqlOperatorBinding;
  * {@link org.apache.calcite.util.Glossary#STRATEGY_PATTERN strategy pattern}.
  * This makes
  * sense because many operators have similar, straightforward strategies, such
- * as to take the type of the first operand.</p>
+ * as to take the type of the first operand.
+ *
+ * @see ReturnTypes
  */
+@FunctionalInterface
 public interface SqlReturnTypeInference {
   //~ Methods ----------------------------------------------------------------
 
@@ -41,6 +44,16 @@ public interface SqlReturnTypeInference {
    */
   RelDataType inferReturnType(
       SqlOperatorBinding opBinding);
-}
 
-// End SqlReturnTypeInference.java
+  /** Returns a return-type inference that applies this rule then a
+   * transform. */
+  default SqlReturnTypeInference andThen(SqlTypeTransform transform) {
+    return ReturnTypes.cascade(this, transform);
+  }
+
+  /** Returns a return-type inference that applies this rule then another
+   * rule, until one of them returns a not-null result. */
+  default SqlReturnTypeInference orElse(SqlReturnTypeInference transform) {
+    return ReturnTypes.chain(this, transform);
+  }
+}

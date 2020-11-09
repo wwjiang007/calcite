@@ -58,19 +58,19 @@ public class OrderByScope extends DelegatingScope {
 
   //~ Methods ----------------------------------------------------------------
 
-  public SqlNode getNode() {
+  @Override public SqlNode getNode() {
     return orderList;
   }
 
-  public void findAllColumnNames(List<SqlMoniker> result) {
+  @Override public void findAllColumnNames(List<SqlMoniker> result) {
     final SqlValidatorNamespace ns = validator.getNamespace(select);
     addColumnNames(ns, result);
   }
 
-  public SqlQualified fullyQualify(SqlIdentifier identifier) {
+  @Override public SqlQualified fullyQualify(SqlIdentifier identifier) {
     // If it's a simple identifier, look for an alias.
     if (identifier.isSimple()
-        && validator.getConformance().isSortByAlias()) {
+        && validator.config().sqlConformance().isSortByAlias()) {
       final String name = identifier.names.get(0);
       final SqlValidatorNamespace selectNs =
           validator.getNamespace(select);
@@ -106,7 +106,7 @@ public class OrderByScope extends DelegatingScope {
     return n;
   }
 
-  public RelDataType resolveColumn(String name, SqlNode ctx) {
+  @Override public RelDataType resolveColumn(String name, SqlNode ctx) {
     final SqlValidatorNamespace selectNs = validator.getNamespace(select);
     final RelDataType rowType = selectNs.getRowType();
     final SqlNameMatcher nameMatcher = validator.catalogReader.nameMatcher();
@@ -118,12 +118,10 @@ public class OrderByScope extends DelegatingScope {
     return selectScope.resolveColumn(name, ctx);
   }
 
-  public void validateExpr(SqlNode expr) {
+  @Override public void validateExpr(SqlNode expr) {
     SqlNode expanded = validator.expandOrderExpr(select, expr);
 
     // expression needs to be valid in parent scope too
     parent.validateExpr(expanded);
   }
 }
-
-// End OrderByScope.java

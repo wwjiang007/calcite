@@ -21,7 +21,6 @@ import org.apache.calcite.runtime.Utilities;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Ordering;
 
 import java.io.Serializable;
@@ -31,6 +30,7 @@ import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.stream.Collector;
 import javax.annotation.Nonnull;
 
 /**
@@ -256,6 +257,13 @@ public class ImmutableBitSet
     return bitIndex >> ADDRESS_BITS_PER_WORD;
   }
 
+  /** Creates a Collector. */
+  public static Collector<Integer, ImmutableBitSet.Builder, ImmutableBitSet>
+      toImmutableBitSet() {
+    return Collector.of(ImmutableBitSet::builder, Builder::set,
+        Builder::combine, Builder::build);
+  }
+
   /** Computes the power set (set of all sets) of this bit set. */
   public Iterable<ImmutableBitSet> powerSet() {
     List<List<ImmutableBitSet>> singletons = new ArrayList<>();
@@ -263,7 +271,7 @@ public class ImmutableBitSet
       singletons.add(
           ImmutableList.of(ImmutableBitSet.of(), ImmutableBitSet.of(bit)));
     }
-    return Iterables.transform(Linq4j.product(singletons),
+    return Util.transform(Linq4j.product(singletons),
         ImmutableBitSet::union);
   }
 
@@ -348,7 +356,7 @@ public class ImmutableBitSet
    *
    * @return a string representation of this bit set
    */
-  public String toString() {
+  @Override public String toString() {
     int numBits = words.length * BITS_PER_WORD;
     StringBuilder b = new StringBuilder(6 * numBits + 2);
     b.append('{');
@@ -412,7 +420,7 @@ public class ImmutableBitSet
    *
    * @return the hash code value for this bit set
    */
-  public int hashCode() {
+  @Override public int hashCode() {
     long h = 1234;
     for (int i = words.length; --i >= 0;) {
       h ^= words[i] * (i + 1);
@@ -445,7 +453,7 @@ public class ImmutableBitSet
    *         {@code false} otherwise
    * @see    #size()
    */
-  public boolean equals(Object obj) {
+  @Override public boolean equals(Object obj) {
     if (this == obj) {
       return true;
     }
@@ -462,7 +470,7 @@ public class ImmutableBitSet
    * <p>Bit sets {@code (), (0), (0, 1), (0, 1, 3), (1), (2, 3)} are in sorted
    * order.</p>
    */
-  public int compareTo(@Nonnull ImmutableBitSet o) {
+  @Override public int compareTo(@Nonnull ImmutableBitSet o) {
     int i = 0;
     for (;;) {
       int n0 = nextSetBit(i);
@@ -574,21 +582,21 @@ public class ImmutableBitSet
     }
   }
 
-  public Iterator<Integer> iterator() {
+  @Override public Iterator<Integer> iterator() {
     return new Iterator<Integer>() {
       int i = nextSetBit(0);
 
-      public boolean hasNext() {
+      @Override public boolean hasNext() {
         return i >= 0;
       }
 
-      public Integer next() {
+      @Override public Integer next() {
         int prev = i;
         i = nextSetBit(i + 1);
         return prev;
       }
 
-      public void remove() {
+      @Override public void remove() {
         throw new UnsupportedOperationException();
       }
     };
@@ -630,11 +638,11 @@ public class ImmutableBitSet
    * iterator is efficient. */
   public Set<Integer> asSet() {
     return new AbstractSet<Integer>() {
-      @Nonnull public Iterator<Integer> iterator() {
+      @Override @Nonnull public Iterator<Integer> iterator() {
         return ImmutableBitSet.this.iterator();
       }
 
-      public int size() {
+      @Override public int size() {
         return cardinality();
       }
 
@@ -748,6 +756,7 @@ public class ImmutableBitSet
    * <p>The input must have an entry for each position.
    *
    * <p>Does not modify the input map or its bit sets. */
+  @SuppressWarnings("JdkObsolete")
   public static SortedMap<Integer, ImmutableBitSet> closure(
       SortedMap<Integer, ImmutableBitSet> equivalence) {
     if (equivalence.isEmpty()) {
@@ -885,7 +894,7 @@ public class ImmutableBitSet
   public static Iterable<ImmutableBitSet> permute(
       Iterable<ImmutableBitSet> bitSets,
       final Map<Integer, Integer> map) {
-    return Iterables.transform(bitSets, bitSet -> bitSet.permute(map));
+    return Util.transform(bitSets, bitSet -> bitSet.permute(map));
   }
 
   /** Returns a bit set with every bit moved up {@code offset} positions.
@@ -902,6 +911,18 @@ public class ImmutableBitSet
   }
 
   /**
+   * Checks if all bit sets contain a particular bit.
+   */
+  public static boolean allContain(Collection<ImmutableBitSet> bitSets, int bit) {
+    for (ImmutableBitSet bitSet : bitSets) {
+      if (!bitSet.get(bit)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * Setup equivalence Sets for each position. If i and j are equivalent then
    * they will have the same equivalence Set. The algorithm computes the
    * closure relation at each position for the position wrt to positions
@@ -910,6 +931,7 @@ public class ImmutableBitSet
    * from lower positions and the final equivalence Set is propagated down
    * from the lowest element in the Set.
    */
+  @SuppressWarnings("JdkObsolete")
   private static class Closure {
     private SortedMap<Integer, ImmutableBitSet> equivalence;
     private final SortedMap<Integer, ImmutableBitSet> closure =
@@ -956,11 +978,29 @@ public class ImmutableBitSet
      *
      * <p>After calling this method, the Builder cannot be used again. */
     public ImmutableBitSet build() {
+      if (words == null) {
+        throw new IllegalArgumentException("can only use builder once");
+      }
       if (words.length == 0) {
         return EMPTY;
       }
       long[] words = this.words;
       this.words = null; // prevent re-use of builder
+      return new ImmutableBitSet(words);
+    }
+
+    /** Builds an ImmutableBitSet from the contents of this Builder.
+     *
+     * <p>After calling this method, the Builder may be used again. */
+    public ImmutableBitSet buildAndReset() {
+      if (words == null) {
+        throw new IllegalArgumentException("can only use builder once");
+      }
+      if (words.length == 0) {
+        return EMPTY;
+      }
+      long[] words = this.words;
+      this.words = EMPTY_LONGS; // reset for next use
       return new ImmutableBitSet(words);
     }
 
@@ -994,6 +1034,18 @@ public class ImmutableBitSet
       }
       words[wordIndex] |= 1L << bit;
       return this;
+    }
+
+    public boolean get(int bitIndex) {
+      if (words == null) {
+        throw new IllegalArgumentException("can only use builder once");
+      }
+      if (bitIndex < 0) {
+        throw new IndexOutOfBoundsException("bitIndex < 0: " + bitIndex);
+      }
+      int wordIndex = wordIndex(bitIndex);
+      return (wordIndex < words.length)
+          && ((words[wordIndex] & (1L << bitIndex)) != 0);
     }
 
     private void trim(int wordCount) {
@@ -1034,6 +1086,25 @@ public class ImmutableBitSet
         throw new IllegalArgumentException("can only use builder once");
       }
       return countBits(words);
+    }
+
+    /** Merges another builder. Does not modify the other builder. */
+    public Builder combine(Builder builder) {
+      if (words.length < builder.words.length) {
+        // Right has more bits. Copy the right and OR in the words of the
+        // previous left.
+        final long[] newWords = builder.words.clone();
+        for (int i = 0; i < words.length; i++) {
+          newWords[i] |= words[i];
+        }
+        words = newWords;
+      } else {
+        // Left has same or more bits. OR in the words of the right.
+        for (int i = 0; i < builder.words.length; i++) {
+          words[i] |= builder.words[i];
+        }
+      }
+      return this;
     }
 
     /** Sets all bits in a given bit set. */
@@ -1142,5 +1213,3 @@ public class ImmutableBitSet
     }
   }
 }
-
-// End ImmutableBitSet.java

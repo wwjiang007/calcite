@@ -21,6 +21,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexExecutable;
+import org.apache.calcite.rex.RexExecutor;
 import org.apache.calcite.rex.RexExecutorImpl;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
@@ -28,7 +29,6 @@ import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlOperator;
-import org.apache.calcite.sql.fun.SqlCastFunction;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.trace.CalciteLogger;
 
@@ -63,12 +63,12 @@ public class RexImplicationChecker {
       new CalciteLogger(LoggerFactory.getLogger(RexImplicationChecker.class));
 
   final RexBuilder builder;
-  final RexExecutorImpl executor;
+  final RexExecutor executor;
   final RelDataType rowType;
 
   public RexImplicationChecker(
       RexBuilder builder,
-      RexExecutorImpl executor,
+      RexExecutor executor,
       RelDataType rowType) {
     this.builder = Objects.requireNonNull(builder);
     this.executor = Objects.requireNonNull(executor);
@@ -156,6 +156,9 @@ public class RexImplicationChecker {
           return true;
         }
       }
+      break;
+    default:
+      break;
     }
     return false;
   }
@@ -191,6 +194,9 @@ public class RexImplicationChecker {
       if (strong.isNull(first)) {
         return true;
       }
+      break;
+    default:
+      break;
     }
 
     final InputUsageFinder firstUsageFinder = new InputUsageFinder();
@@ -250,8 +256,7 @@ public class RexImplicationChecker {
     }
 
     ImmutableList<RexNode> constExps = ImmutableList.of(second);
-    final RexExecutable exec =
-        executor.getExecutable(builder, constExps, rowType);
+    final RexExecutable exec = RexExecutorImpl.getExecutable(builder, constExps, rowType);
 
     Object[] result;
     exec.setDataContext(dataValues);
@@ -437,7 +442,7 @@ public class RexImplicationChecker {
       super(true);
     }
 
-    public Void visitInputRef(RexInputRef inputRef) {
+    @Override public Void visitInputRef(RexInputRef inputRef) {
       InputRefUsage<SqlOperator, RexNode> inputRefUse = getUsageMap(inputRef);
       inputRefUse.usageCount++;
       return null;
@@ -464,7 +469,7 @@ public class RexImplicationChecker {
 
     private void updateUnaryOpUsage(RexCall call) {
       final List<RexNode> operands = call.getOperands();
-      RexNode first = removeCast(operands.get(0));
+      RexNode first = RexUtil.removeCast(operands.get(0));
 
       if (first.isA(SqlKind.INPUT_REF)) {
         updateUsage(call.getOperator(), (RexInputRef) first, null);
@@ -473,8 +478,8 @@ public class RexImplicationChecker {
 
     private void updateBinaryOpUsage(RexCall call) {
       final List<RexNode> operands = call.getOperands();
-      RexNode first = removeCast(operands.get(0));
-      RexNode second = removeCast(operands.get(1));
+      RexNode first = RexUtil.removeCast(operands.get(0));
+      RexNode second = RexUtil.removeCast(operands.get(1));
 
       if (first.isA(SqlKind.INPUT_REF)
           && second.isA(SqlKind.LITERAL)) {
@@ -489,17 +494,6 @@ public class RexImplicationChecker {
 
     private SqlOperator reverse(SqlOperator op) {
       return RelOptUtil.op(op.getKind().reverse(), op);
-    }
-
-    private static RexNode removeCast(RexNode inputRef) {
-      if (inputRef instanceof RexCall) {
-        final RexCall castedRef = (RexCall) inputRef;
-        final SqlOperator operator = castedRef.getOperator();
-        if (operator instanceof SqlCastFunction) {
-          inputRef = castedRef.getOperands().get(0);
-        }
-      }
-      return inputRef;
     }
 
     private void updateUsage(SqlOperator op, RexInputRef inputRef,
@@ -531,5 +525,3 @@ public class RexImplicationChecker {
     private int usageCount = 0;
   }
 }
-
-// End RexImplicationChecker.java

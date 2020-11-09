@@ -16,7 +16,10 @@
  */
 package org.apache.calcite.runtime;
 
+import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.util.Holder;
+
+import org.apiguardian.api.API;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -61,6 +64,9 @@ public enum Hook {
    * Janino. */
   JAVA_PLAN,
 
+  /** Called before SqlToRelConverter is built. */
+  SQL2REL_CONVERTER_CONFIG_BUILDER,
+
   /** Called with the output of sql-to-rel-converter. */
   CONVERTED,
 
@@ -86,11 +92,21 @@ public enum Hook {
   /** Called with a query that has been generated to send to a back-end system.
    * The query might be a SQL string (for the JDBC adapter), a list of Mongo
    * pipeline expressions (for the MongoDB adapter), et cetera. */
-  QUERY_PLAN;
+  QUERY_PLAN,
 
+  /**
+   * Called when a plan is about to be implemented (e.g. implemented via Enumerable, Bindable,
+   * and so on).
+   * The hook supplies {@link RelRoot} as an argument.
+   */
+  @API(since = "1.22", status = API.Status.EXPERIMENTAL)
+  PLAN_BEFORE_IMPLEMENTATION;
+
+  @SuppressWarnings("ImmutableEnumChecker")
   private final List<Consumer<Object>> handlers =
       new CopyOnWriteArrayList<>();
 
+  @SuppressWarnings("ImmutableEnumChecker")
   private final ThreadLocal<List<Consumer<Object>>> threadHandlers =
       ThreadLocal.withInitial(ArrayList::new);
 
@@ -107,16 +123,22 @@ public enum Hook {
    *         closeable.close();
    *     }</pre>
    * </blockquote>
+   * @deprecated this installs a global hook (cross-thread), so it might have greater impact
+   *     than expected. Use with caution. Prefer thread-local hooks.
+   * @see #addThread(Consumer)
    */
+  @API(status = API.Status.MAINTAINED)
+  @Deprecated
   public <T> Closeable add(final Consumer<T> handler) {
     //noinspection unchecked
     handlers.add((Consumer<Object>) handler);
     return () -> remove(handler);
   }
 
+  // CHECKSTYLE: IGNORE 1
   /** @deprecated Use {@link #add(Consumer)}. */
-  @SuppressWarnings("Guava")
-  @Deprecated // to be removed in 2.0
+  @SuppressWarnings({"Guava", "ReturnValueIgnored"})
+  @Deprecated // to be removed before 2.0
   public <T, R> Closeable add(final Function<T, R> handler) {
     return add((Consumer<T>) handler::apply);
   }
@@ -133,9 +155,10 @@ public enum Hook {
     return () -> removeThread(handler);
   }
 
+  // CHECKSTYLE: IGNORE 1
   /** @deprecated Use {@link #addThread(Consumer)}. */
   @SuppressWarnings("Guava")
-  @Deprecated // to be removed in 2.0
+  @Deprecated // to be removed before 2.0
   public <T, R> Closeable addThread(
       final com.google.common.base.Function<T, R> handler) {
     return addThread((Consumer<T>) handler::apply);
@@ -146,6 +169,7 @@ public enum Hook {
     return threadHandlers.get().remove(handler);
   }
 
+  // CHECKSTYLE: IGNORE 1
   /** @deprecated Use {@link #propertyJ}. */
   @SuppressWarnings("Guava")
   @Deprecated // return type will change in 2.0
@@ -192,5 +216,3 @@ public enum Hook {
     @Override void close();
   }
 }
-
-// End Hook.java

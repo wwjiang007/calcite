@@ -38,6 +38,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -592,7 +593,7 @@ public abstract class Expressions {
    * Creates a GotoExpression representing a continue statement.
    */
   public static GotoStatement continue_(LabelTarget labelTarget) {
-    throw Extensions.todo();
+    return new GotoStatement(GotoExpressionKind.Continue, null, null);
   }
 
   /**
@@ -1398,6 +1399,14 @@ public abstract class Expressions {
   }
 
   /**
+   * Creates a ForEachExpression with the given body.
+   */
+  public static ForEachStatement forEach(
+      ParameterExpression parameter, Expression iterable, Statement body) {
+    return new ForEachStatement(parameter, iterable, body);
+  }
+
+  /**
    * Creates a BinaryExpression, given the left and right operands,
    * by calling an appropriate factory method.
    */
@@ -1451,14 +1460,6 @@ public abstract class Expressions {
       return expression;
     }
     return unbox(expression, primitive);
-  }
-
-  private Type largest(Type... types) {
-    Type max = types[0];
-    for (int i = 1; i < types.length; i++) {
-      max = larger(max, types[i]);
-    }
-    return max;
   }
 
   private static Type larger(Type type0, Type type1) {
@@ -1613,6 +1614,9 @@ public abstract class Expressions {
       if (type == byte.class || type == short.class) {
         type = int.class;
       }
+      break;
+    default:
+      break;
     }
     return new UnaryExpression(expressionType, type, expression);
   }
@@ -3043,8 +3047,18 @@ public abstract class Expressions {
     return new FluentArrayList<>(toList(ts));
   }
 
+  /**
+   * Evaluates an expression and returns the result.
+   */
+  public static Object evaluate(Node node) {
+    Objects.requireNonNull(node);
+    final Evaluator evaluator = new Evaluator();
+    return ((AbstractNode) node).evaluate(evaluator);
+  }
+
   // ~ Private helper methods ------------------------------------------------
 
+  @SuppressWarnings("unused")
   private static boolean shouldLift(Expression left, Expression right,
       Method method) {
     // FIXME: Implement the rules in modulo
@@ -3092,10 +3106,6 @@ public abstract class Expressions {
       return (Collection<T>) iterable;
     }
     return toList(iterable);
-  }
-
-  private static <T> T[] toArray(Iterable<T> iterable, T[] a) {
-    return toCollection(iterable).toArray(a);
   }
 
   static <T extends Expression> Expression accept(T node, Shuttle shuttle) {
@@ -3149,11 +3159,11 @@ public abstract class Expressions {
     if (parameterExpressions.isEmpty()) {
       return Collections.emptyList(); // short cut
     }
-    final List<Expression> parameterExpressions1 = new ArrayList<>();
+    final ImmutableList.Builder<Expression> parameterExpressions1 = new ImmutableList.Builder<>();
     for (ParameterExpression parameterExpression : parameterExpressions) {
       parameterExpressions1.add(parameterExpression.accept(shuttle));
     }
-    return parameterExpressions1;
+    return parameterExpressions1.build();
   }
 
   static List<DeclarationStatement> acceptDeclarations(
@@ -3247,35 +3257,33 @@ public abstract class Expressions {
       super(c);
     }
 
-    public FluentList<T> append(T t) {
+    @Override public FluentList<T> append(T t) {
       add(t);
       return this;
     }
 
-    public FluentList<T> appendIf(boolean condition, T t) {
+    @Override public FluentList<T> appendIf(boolean condition, T t) {
       if (condition) {
         add(t);
       }
       return this;
     }
 
-    public FluentList<T> appendIfNotNull(T t) {
+    @Override public FluentList<T> appendIfNotNull(T t) {
       if (t != null) {
         add(t);
       }
       return this;
     }
 
-    public FluentList<T> appendAll(Iterable<T> ts) {
+    @Override public FluentList<T> appendAll(Iterable<T> ts) {
       addAll(toCollection(ts));
       return this;
     }
 
-    public FluentList<T> appendAll(T... ts) {
+    @Override public FluentList<T> appendAll(T... ts) {
       addAll(Arrays.asList(ts));
       return this;
     }
   }
 }
-
-// End Expressions.java

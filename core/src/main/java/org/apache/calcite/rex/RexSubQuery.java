@@ -30,6 +30,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import com.google.common.collect.ImmutableList;
 
 import java.util.List;
+import java.util.Objects;
 import javax.annotation.Nonnull;
 
 /**
@@ -42,7 +43,6 @@ public class RexSubQuery extends RexCall {
       ImmutableList<RexNode> operands, RelNode rel) {
     super(type, op, operands);
     this.rel = rel;
-    this.digest = computeDigest(false);
   }
 
   /** Creates an IN sub-query. */
@@ -107,11 +107,11 @@ public class RexSubQuery extends RexCall {
         ImmutableList.of(), rel);
   }
 
-  public <R> R accept(RexVisitor<R> visitor) {
+  @Override public <R> R accept(RexVisitor<R> visitor) {
     return visitor.visitSubQuery(this);
   }
 
-  public <R, P> R accept(RexBiVisitor<R, P> visitor, P arg) {
+  @Override public <R, P> R accept(RexBiVisitor<R, P> visitor, P arg) {
     return visitor.visitSubQuery(this, arg);
   }
 
@@ -136,6 +136,24 @@ public class RexSubQuery extends RexCall {
   public RexSubQuery clone(RelNode rel) {
     return new RexSubQuery(type, getOperator(), operands, rel);
   }
-}
 
-// End RexSubQuery.java
+  @Override public boolean equals(Object obj) {
+    if (this == obj) {
+      return true;
+    }
+    if (!(obj instanceof RexSubQuery)) {
+      return false;
+    }
+    RexSubQuery sq = (RexSubQuery) obj;
+    return op.equals(sq.op)
+        && operands.equals(sq.operands)
+        && rel.deepEquals(sq.rel);
+  }
+
+  @Override public int hashCode() {
+    if (hash == 0) {
+      hash = Objects.hash(op, operands, rel.deepHashCode());
+    }
+    return hash;
+  }
+}

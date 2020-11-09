@@ -17,6 +17,8 @@
 package org.apache.calcite.sql.parser;
 
 import org.apache.calcite.avatica.util.Casing;
+import org.apache.calcite.config.CharLiteralStyle;
+import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -36,8 +38,11 @@ import java.io.Reader;
 import java.io.StringReader;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
+import java.util.NavigableSet;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -71,6 +76,7 @@ public abstract class SqlAbstractParserImpl {
           "BIT_LENGTH",
           "BOTH",
           "BY",
+          "CALL",
           "CASCADE",
           "CASCADED",
           "CASE",
@@ -87,10 +93,12 @@ public abstract class SqlAbstractParserImpl {
           "COLLATION",
           "COLUMN",
           "COMMIT",
+          "CONDITION",
           "CONNECT",
           "CONNECTION",
           "CONSTRAINT",
           "CONSTRAINTS",
+          "CONTAINS",
           "CONTINUE",
           "CONVERT",
           "CORRESPONDING",
@@ -99,6 +107,7 @@ public abstract class SqlAbstractParserImpl {
           "CROSS",
           "CURRENT",
           "CURRENT_DATE",
+          "CURRENT_PATH",
           "CURRENT_TIME",
           "CURRENT_TIMESTAMP",
           "CURRENT_USER",
@@ -116,6 +125,7 @@ public abstract class SqlAbstractParserImpl {
           "DESC",
           "DESCRIBE",
           "DESCRIPTOR",
+          "DETERMINISTIC",
           "DIAGNOSTICS",
           "DISCONNECT",
           "DISTINCT",
@@ -124,7 +134,6 @@ public abstract class SqlAbstractParserImpl {
           "DROP",
           "ELSE",
           "END",
-          "END-EXEC",
           "ESCAPE",
           "EXCEPT",
           "EXCEPTION",
@@ -142,6 +151,7 @@ public abstract class SqlAbstractParserImpl {
           "FOUND",
           "FROM",
           "FULL",
+          "FUNCTION",
           "GET",
           "GLOBAL",
           "GO",
@@ -153,10 +163,12 @@ public abstract class SqlAbstractParserImpl {
           "IDENTITY",
           "IMMEDIATE",
           "IN",
+          "INADD",
           "INDICATOR",
           "INITIALLY",
           "INNER",
-          "INADD",
+          "INOUT",
+          "INPUT",
           "INSENSITIVE",
           "INSERT",
           "INT",
@@ -200,11 +212,15 @@ public abstract class SqlAbstractParserImpl {
           "OPTION",
           "OR",
           "ORDER",
-          "OUTER",
+          "OUT",
           "OUTADD",
+          "OUTER",
+          "OUTPUT",
           "OVERLAPS",
           "PAD",
+          "PARAMETER",
           "PARTIAL",
+          "PATH",
           "POSITION",
           "PRECISION",
           "PREPARE",
@@ -219,9 +235,12 @@ public abstract class SqlAbstractParserImpl {
           "REFERENCES",
           "RELATIVE",
           "RESTRICT",
+          "RETURN",
+          "RETURNS",
           "REVOKE",
           "RIGHT",
           "ROLLBACK",
+          "ROUTINE",
           "ROWS",
           "SCHEMA",
           "SCROLL",
@@ -235,10 +254,13 @@ public abstract class SqlAbstractParserImpl {
           "SMALLINT",
           "SOME",
           "SPACE",
+          "SPECIFIC",
           "SQL",
           "SQLCODE",
           "SQLERROR",
+          "SQLEXCEPTION",
           "SQLSTATE",
+          "SQLWARNING",
           "SUBSTRING",
           "SUM",
           "SYSTEM_USER",
@@ -329,6 +351,8 @@ public abstract class SqlAbstractParserImpl {
   protected int nDynamicParams;
 
   protected String originalSql;
+
+  protected final List<CalciteContextException> warnings = new ArrayList<>();
 
   //~ Methods ----------------------------------------------------------------
 
@@ -482,11 +506,63 @@ public abstract class SqlAbstractParserImpl {
   /**
    * Change parser state.
    *
-   * @param stateName new state.
+   * @param state New state
    */
-  public abstract void switchTo(String stateName);
+  public abstract void switchTo(LexicalState state);
 
   //~ Inner Interfaces -------------------------------------------------------
+
+  /** Valid starting states of the parser.
+   *
+   * <p>(There are other states that the parser enters during parsing, such as
+   * being inside a multi-line comment.)
+   *
+   * <p>The starting states generally control the syntax of quoted
+   * identifiers. */
+  public enum LexicalState {
+    /** Starting state where quoted identifiers use brackets, like Microsoft SQL
+     * Server. */
+    DEFAULT,
+
+    /** Starting state where quoted identifiers use double-quotes, like
+     * Oracle and PostgreSQL. */
+    DQID,
+
+    /** Starting state where quoted identifiers use back-ticks, like MySQL. */
+    BTID,
+
+    /** Starting state where quoted identifiers use back-ticks,
+     * unquoted identifiers that are part of table names may contain hyphens,
+     * and character literals may be enclosed in single- or double-quotes,
+     * like BigQuery. */
+    BQID;
+
+    /** Returns the corresponding parser state with the given configuration
+     * (in particular, quoting style). */
+    public static LexicalState forConfig(SqlParser.Config config) {
+      switch (config.quoting()) {
+      case BRACKET:
+        return DEFAULT;
+      case DOUBLE_QUOTE:
+        return DQID;
+      case BACK_TICK:
+        if (config.conformance().allowHyphenInUnquotedTableName()
+            && config.charLiteralStyles().equals(
+                EnumSet.of(CharLiteralStyle.BQ_SINGLE,
+                    CharLiteralStyle.BQ_DOUBLE))) {
+          return BQID;
+        }
+        if (!config.conformance().allowHyphenInUnquotedTableName()
+            && config.charLiteralStyles().equals(
+                EnumSet.of(CharLiteralStyle.STANDARD))) {
+          return BTID;
+        }
+        // fall through
+      default:
+        throw new AssertionError(config);
+      }
+    }
+  }
 
   /**
    * Metadata about the parser. For example:
@@ -563,7 +639,7 @@ public abstract class SqlAbstractParserImpl {
     /**
      * Set of all tokens.
      */
-    private final SortedSet<String> tokenSet = new TreeSet<>();
+    private final NavigableSet<String> tokenSet = new TreeSet<>();
 
     /**
      * Immutable list of all tokens, in alphabetical order.
@@ -670,18 +746,22 @@ public abstract class SqlAbstractParserImpl {
       return sb.toString();
     }
 
+    @Override
     public List<String> getTokens() {
       return tokenList;
     }
 
+    @Override
     public boolean isSql92ReservedWord(String token) {
       return SQL_92_RESERVED_WORD_SET.contains(token);
     }
 
+    @Override
     public String getJdbcKeywords() {
       return sql92ReservedWords;
     }
 
+    @Override
     public boolean isKeyword(String token) {
       return isNonReservedKeyword(token)
           || isReservedFunctionName(token)
@@ -689,22 +769,24 @@ public abstract class SqlAbstractParserImpl {
           || isReservedWord(token);
     }
 
+    @Override
     public boolean isNonReservedKeyword(String token) {
       return nonReservedKeyWordSet.contains(token);
     }
 
+    @Override
     public boolean isReservedFunctionName(String token) {
       return reservedFunctionNames.contains(token);
     }
 
+    @Override
     public boolean isContextVariableName(String token) {
       return contextVariableNames.contains(token);
     }
 
+    @Override
     public boolean isReservedWord(String token) {
       return reservedWords.contains(token);
     }
   }
 }
-
-// End SqlAbstractParserImpl.java

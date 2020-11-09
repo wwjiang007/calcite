@@ -34,6 +34,7 @@ import org.apache.calcite.sql.type.SqlOperandCountRanges;
 import org.apache.calcite.sql.type.SqlSingleOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.sql.util.SqlBasicVisitor;
 import org.apache.calcite.sql.util.SqlVisitor;
 import org.apache.calcite.sql.validate.SqlValidator;
@@ -111,6 +112,9 @@ public class SqlDotOperator extends SqlSpecialOperator {
           Static.RESOURCE.unknownField(fieldName));
     }
     RelDataType type = field.getType();
+    if (nodeType.isNullable()) {
+      type = validator.getTypeFactory().createTypeWithNullability(type, true);
+    }
 
     // Validate and determine coercibility and resulting collation
     // name of binary operator if needed.
@@ -119,7 +123,7 @@ public class SqlDotOperator extends SqlSpecialOperator {
     return type;
   }
 
-  public void validateCall(
+  @Override public void validateCall(
       SqlCall call,
       SqlValidator validator,
       SqlValidatorScope scope,
@@ -134,8 +138,7 @@ public class SqlDotOperator extends SqlSpecialOperator {
       boolean throwOnFailure) {
     final SqlNode left = callBinding.operand(0);
     final SqlNode right = callBinding.operand(1);
-    final RelDataType type =
-        callBinding.getValidator().deriveType(callBinding.getScope(), left);
+    final RelDataType type = SqlTypeUtil.deriveType(callBinding, left);
     if (type.getSqlTypeName() != SqlTypeName.ROW) {
       return false;
     } else if (type.getSqlIdentifier().isStar()) {
@@ -143,6 +146,8 @@ public class SqlDotOperator extends SqlSpecialOperator {
     }
     final RelDataType operandType = callBinding.getOperandType(0);
     final SqlSingleOperandTypeChecker checker = getChecker(operandType);
+    // Actually operand0 always comes from parsing the SqlIdentifier, so there
+    // is no need to make implicit type coercion.
     return checker.checkSingleOperandType(callBinding, right, 0,
         throwOnFailure);
   }
@@ -184,5 +189,3 @@ public class SqlDotOperator extends SqlSpecialOperator {
     }
   }
 }
-
-// End SqlDotOperator.java

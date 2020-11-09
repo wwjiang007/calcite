@@ -34,33 +34,28 @@ import java.util.Map;
 public class SqlSimpleParser {
   //~ Enums ------------------------------------------------------------------
 
+  /** Token. */
   enum TokenType {
     // keywords
     SELECT, FROM, JOIN, ON, USING, WHERE, GROUP, HAVING, ORDER, BY,
 
     UNION, INTERSECT, EXCEPT, MINUS,
 
-    /**
-     * left parenthesis
-     */
+    /** Left parenthesis. */
     LPAREN {
-      public String sql() {
+      @Override public String sql() {
         return "(";
       }
     },
 
-    /**
-     * right parenthesis
-     */
+    /** Right parenthesis. */
     RPAREN {
-      public String sql() {
+      @Override public String sql() {
         return ")";
       }
     },
 
-    /**
-     * identifier, or indeed any miscellaneous sequence of characters
-     */
+    /** Identifier, or indeed any miscellaneous sequence of characters. */
     ID,
 
     /**
@@ -73,7 +68,7 @@ public class SqlSimpleParser {
      */
     SQID, COMMENT,
     COMMA {
-      public String sql() {
+      @Override public String sql() {
         return ",";
       }
     },
@@ -96,18 +91,18 @@ public class SqlSimpleParser {
   //~ Constructors -----------------------------------------------------------
 
   /**
-   * Creates a SqlSimpleParser
+   * Creates a SqlSimpleParser.
    *
    * @param hintToken Hint token
-   * @deprecated
+   * @deprecated Use {@link #SqlSimpleParser(String, SqlParser.Config)}
    */
-  @Deprecated
+  @Deprecated // to be removed before 2.0
   public SqlSimpleParser(String hintToken) {
     this(hintToken, SqlParser.Config.DEFAULT);
   }
 
   /**
-   * Creates a SqlSimpleParser
+   * Creates a SqlSimpleParser.
    *
    * @param hintToken Hint token
    * @param parserConfig parser configuration
@@ -142,8 +137,8 @@ public class SqlSimpleParser {
   }
 
   /**
-   * Turns a partially completed or syntactically incorrect sql statement into
-   * a simplified, valid one that can be validated
+   * Turns a partially completed or syntactically incorrect SQL statement into a
+   * simplified, valid one that can be validated.
    *
    * @param sql A partial or syntactically incorrect sql statement
    * @return a completed, valid (and possibly simplified) SQL statement
@@ -196,7 +191,7 @@ public class SqlSimpleParser {
           if (iter.hasNext()) {
             token = iter.next();
             if ((token.type == TokenType.ID)
-                && token.s.equalsIgnoreCase("ALL")) {
+                && "ALL".equalsIgnoreCase(token.s)) {
               outList.add(token);
             } else {
               iter.previous();
@@ -260,12 +255,13 @@ public class SqlSimpleParser {
 
   //~ Inner Classes ----------------------------------------------------------
 
+  /** Tokenizer. */
   public static class Tokenizer {
-    private static final Map<String, TokenType> map = new HashMap<>();
+    private static final Map<String, TokenType> TOKEN_TYPES = new HashMap<>();
 
     static {
       for (TokenType type : TokenType.values()) {
-        map.put(type.name(), type);
+        TOKEN_TYPES.put(type.name(), type);
       }
     }
 
@@ -275,7 +271,7 @@ public class SqlSimpleParser {
     private int pos;
     int start = 0;
 
-    @Deprecated
+    @Deprecated // to be removed before 2.0
     public Tokenizer(String sql, String hintToken) {
       this(sql, hintToken, Quoting.DOUBLE_QUOTE);
     }
@@ -373,8 +369,8 @@ public class SqlSimpleParser {
               pos = indexOfLineEnd(sql, pos + 2);
               return new Token(TokenType.COMMENT);
             }
-            // fall through
           }
+          // fall through
 
         case '-':
           // possible start of '--' comment
@@ -415,7 +411,7 @@ public class SqlSimpleParser {
               }
             }
             String name = sql.substring(start, pos);
-            TokenType tokenType = map.get(name.toUpperCase(Locale.ROOT));
+            TokenType tokenType = TOKEN_TYPES.get(name.toUpperCase(Locale.ROOT));
             if (tokenType == null) {
               return new IdToken(TokenType.ID, name);
             } else {
@@ -444,6 +440,7 @@ public class SqlSimpleParser {
     }
   }
 
+  /** Token. */
   public static class Token {
     private final TokenType type;
     private final String s;
@@ -457,7 +454,7 @@ public class SqlSimpleParser {
       this.s = s;
     }
 
-    public String toString() {
+    @Override public String toString() {
       return (s == null) ? type.toString() : (type + "(" + s + ")");
     }
 
@@ -470,6 +467,7 @@ public class SqlSimpleParser {
     }
   }
 
+  /** Token representing an identifier. */
   public static class IdToken extends Token {
     public IdToken(TokenType type, String s) {
       super(type, s);
@@ -477,15 +475,16 @@ public class SqlSimpleParser {
     }
   }
 
+  /** Token representing a query. */
   static class Query extends Token {
     private final List<Token> tokenList;
 
-    public Query(List<Token> tokenList) {
+    Query(List<Token> tokenList) {
       super(TokenType.QUERY);
       this.tokenList = new ArrayList<>(tokenList);
     }
 
-    public void unparse(StringBuilder buf) {
+    @Override public void unparse(StringBuilder buf) {
       int k = -1;
       for (Token token : tokenList) {
         if (++k > 0) {
@@ -521,7 +520,7 @@ public class SqlSimpleParser {
         for (Token token : tokenList) {
           switch (token.type) {
           case ID:
-            if (token.s.equals(hintToken)) {
+            if (hintToken.equals(token.s)) {
               foundInClause = clause;
             }
             break;
@@ -549,6 +548,8 @@ public class SqlSimpleParser {
               foundInClause = clause;
               foundInSubQuery = (Query) token;
             }
+            break;
+          default:
             break;
           }
         }
@@ -610,6 +611,8 @@ public class SqlSimpleParser {
           purgeWhere();
           purgeGroupByHaving();
           break;
+        default:
+          break;
         }
       }
 
@@ -622,6 +625,8 @@ public class SqlSimpleParser {
               (query == foundInSubQuery) ? hintToken : null);
           break;
         }
+        default:
+          break;
         }
       }
       return this;
@@ -652,9 +657,12 @@ public class SqlSimpleParser {
           }
           break;
         case ID:
-          if (token.s.equals(hintToken)) {
+          if (hintToken.equals(token.s)) {
             found = true;
           }
+          break;
+        default:
+          break;
         }
       }
       if (found) {
@@ -680,6 +688,7 @@ public class SqlSimpleParser {
       sublist.add(new Token(TokenType.ID, "*"));
     }
 
+    @SuppressWarnings("unused")
     private void purgeSelectExprsKeepAliases() {
       List<Token> sublist = findClause(TokenType.SELECT);
       List<Token> newSelectClause = new ArrayList<>();
@@ -718,7 +727,7 @@ public class SqlSimpleParser {
         Token token = sublist.get(i);
         switch (token.type) {
         case QUERY:
-          if (((Query)token).contains(hintToken)) {
+          if (((Query) token).contains(hintToken)) {
             found = true;
           }
           break;
@@ -735,9 +744,12 @@ public class SqlSimpleParser {
           itemStart = i + 1;
           break;
         case ID:
-          if (token.s.equals(hintToken)) {
+          if (hintToken.equals(token.s)) {
             found = true;
           }
+          break;
+        default:
+          break;
         }
       }
 
@@ -815,7 +827,7 @@ public class SqlSimpleParser {
       for (Token token : tokenList) {
         switch (token.type) {
         case ID:
-          if (token.s.equals(hintToken)) {
+          if (hintToken.equals(token.s)) {
             return true;
           }
           break;
@@ -824,11 +836,11 @@ public class SqlSimpleParser {
             return true;
           }
           break;
+        default:
+          break;
         }
       }
       return false;
     }
   }
 }
-
-// End SqlSimpleParser.java

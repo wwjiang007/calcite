@@ -21,6 +21,7 @@ import org.apache.calcite.linq4j.function.Functions;
 import org.apache.calcite.plan.AbstractRelOptPlanner;
 import org.apache.calcite.plan.CommonRelSubExprRule;
 import org.apache.calcite.plan.Context;
+import org.apache.calcite.plan.RelDigest;
 import org.apache.calcite.plan.RelOptCost;
 import org.apache.calcite.plan.RelOptCostFactory;
 import org.apache.calcite.plan.RelOptCostImpl;
@@ -35,8 +36,10 @@ import org.apache.calcite.rel.convert.Converter;
 import org.apache.calcite.rel.convert.ConverterRule;
 import org.apache.calcite.rel.convert.TraitMatchingRule;
 import org.apache.calcite.rel.core.RelFactories;
+import org.apache.calcite.rel.metadata.RelMdUtil;
 import org.apache.calcite.rel.metadata.RelMetadataProvider;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
+import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 import org.apache.calcite.util.graph.BreadthFirstIterator;
@@ -50,6 +53,7 @@ import org.apache.calcite.util.graph.TopologicalOrderIterator;
 
 import com.google.common.collect.ImmutableList;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -59,6 +63,7 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 
 /**
@@ -76,11 +81,12 @@ public class HepPlanner extends AbstractRelOptPlanner {
 
   private RelTraitSet requestedRootTraits;
 
-  private final Map<String, HepRelVertex> mapDigestToVertex = new HashMap<>();
-
-  // NOTE jvs 24-Apr-2006:  We use LinkedHashSet
-  // in order to provide deterministic behavior.
-  private final Set<RelOptRule> allRules = new LinkedHashSet<>();
+  /**
+   * {@link RelDataType} is represented with its field types as {@code List<RelDataType>}.
+   * This enables to treat as equal projects that differ in expression names only.
+   */
+  private final Map<RelDigest, HepRelVertex> mapDigestToVertex =
+      new HashMap<>();
 
   private int nTransformations;
 
@@ -148,44 +154,26 @@ public class HepPlanner extends AbstractRelOptPlanner {
   //~ Methods ----------------------------------------------------------------
 
   // implement RelOptPlanner
-  public void setRoot(RelNode rel) {
+  @Override public void setRoot(RelNode rel) {
     root = addRelToGraph(rel);
     dumpGraph();
   }
 
   // implement RelOptPlanner
-  public RelNode getRoot() {
+  @Override public RelNode getRoot() {
     return root;
-  }
-
-  public List<RelOptRule> getRules() {
-    return ImmutableList.copyOf(allRules);
-  }
-
-  // implement RelOptPlanner
-  public boolean addRule(RelOptRule rule) {
-    boolean added = allRules.add(rule);
-    if (added) {
-      mapRuleDescription(rule);
-    }
-    return added;
   }
 
   @Override public void clear() {
     super.clear();
-    for (RelOptRule rule : ImmutableList.copyOf(allRules)) {
+    for (RelOptRule rule : getRules()) {
       removeRule(rule);
     }
     this.materializations.clear();
   }
 
-  public boolean removeRule(RelOptRule rule) {
-    unmapRuleDescription(rule);
-    return allRules.remove(rule);
-  }
-
   // implement RelOptPlanner
-  public RelNode changeTraits(RelNode rel, RelTraitSet toTraits) {
+  @Override public RelNode changeTraits(RelNode rel, RelTraitSet toTraits) {
     // Ignore traits, except for the root, where we remember
     // what the final conversion should be.
     if ((rel == root) || (rel == root.getCurrentRel())) {
@@ -195,14 +183,14 @@ public class HepPlanner extends AbstractRelOptPlanner {
   }
 
   // implement RelOptPlanner
-  public RelNode findBestExp() {
+  @Override public RelNode findBestExp() {
     assert root != null;
 
     executeProgram(mainProgram);
 
     // Get rid of everything except what's in the final plan.
     collectGarbage();
-
+    dumpRuleAttemptsInfo();
     return buildFinalPlan(root);
   }
 
@@ -266,7 +254,7 @@ public class HepPlanner extends AbstractRelOptPlanner {
     LOGGER.trace("Applying rule class {}", instruction.ruleClass);
     if (instruction.ruleSet == null) {
       instruction.ruleSet = new LinkedHashSet<>();
-      for (RelOptRule rule : allRules) {
+      for (RelOptRule rule : mapDescToRule.values()) {
         if (instruction.ruleClass.isInstance(rule)) {
           instruction.ruleSet.add(rule);
         }
@@ -298,7 +286,7 @@ public class HepPlanner extends AbstractRelOptPlanner {
     assert currentProgram.group == null;
     if (instruction.ruleSet == null) {
       instruction.ruleSet = new LinkedHashSet<>();
-      for (RelOptRule rule : allRules) {
+      for (RelOptRule rule : mapDescToRule.values()) {
         if (!(rule instanceof ConverterRule)) {
           continue;
         }
@@ -312,7 +300,8 @@ public class HepPlanner extends AbstractRelOptPlanner {
         if (!instruction.guaranteed) {
           // Add a TraitMatchingRule to work bottom-up
           instruction.ruleSet.add(
-              new TraitMatchingRule(converter, RelFactories.LOGICAL_BUILDER));
+              TraitMatchingRule.config(converter, RelFactories.LOGICAL_BUILDER)
+                  .toRule());
         }
       }
     }
@@ -323,7 +312,7 @@ public class HepPlanner extends AbstractRelOptPlanner {
     assert currentProgram.group == null;
     if (instruction.ruleSet == null) {
       instruction.ruleSet = new LinkedHashSet<>();
-      for (RelOptRule rule : allRules) {
+      for (RelOptRule rule : mapDescToRule.values()) {
         if (!(rule instanceof CommonRelSubExprRule)) {
           continue;
         }
@@ -491,17 +480,11 @@ public class HepPlanner extends AbstractRelOptPlanner {
     }
   }
 
-  /** Returns whether the vertex is valid. */
-  private boolean belongsToDag(HepRelVertex vertex) {
-    String digest = vertex.getCurrentRel().getDigest();
-    return mapDigestToVertex.get(digest) != null;
-  }
-
   private HepRelVertex applyRule(
       RelOptRule rule,
       HepRelVertex vertex,
       boolean forceConversions) {
-    if (!belongsToDag(vertex)) {
+    if (!graph.vertexSet().contains(vertex)) {
       return null;
     }
     RelTrait parentTrait = null;
@@ -621,6 +604,13 @@ public class HepPlanner extends AbstractRelOptPlanner {
       Map<RelNode, List<RelNode>> nodeChildren) {
     if (!operand.matches(rel)) {
       return false;
+    }
+    for (RelNode input : rel.getInputs()) {
+      if (!(input instanceof HepRelVertex)) {
+        // The graph could be partially optimized for materialized view. In that
+        // case, the input would be a RelNode and shouldn't be matched again here.
+        return false;
+      }
     }
     bindings.add(rel);
     @SuppressWarnings("unchecked")
@@ -771,7 +761,7 @@ public class HepPlanner extends AbstractRelOptPlanner {
   }
 
   // implement RelOptPlanner
-  public RelNode register(
+  @Override public RelNode register(
       RelNode rel,
       RelNode equivRel) {
     // Ignore; this call is mostly to tell Volcano how to avoid
@@ -784,12 +774,12 @@ public class HepPlanner extends AbstractRelOptPlanner {
   }
 
   // implement RelOptPlanner
-  public RelNode ensureRegistered(RelNode rel, RelNode equivRel) {
+  @Override public RelNode ensureRegistered(RelNode rel, RelNode equivRel) {
     return rel;
   }
 
   // implement RelOptPlanner
-  public boolean isRegistered(RelNode rel) {
+  @Override public boolean isRegistered(RelNode rel) {
     return true;
   }
 
@@ -822,8 +812,7 @@ public class HepPlanner extends AbstractRelOptPlanner {
     // try to find equivalent rel only if DAG is allowed
     if (!noDag) {
       // Now, check if an equivalent vertex already exists in graph.
-      String digest = rel.getDigest();
-      HepRelVertex equivVertex = mapDigestToVertex.get(digest);
+      HepRelVertex equivVertex = mapDigestToVertex.get(rel.getRelDigest());
       if (equivVertex != null) {
         // Use existing vertex.
         return equivVertex;
@@ -866,6 +855,7 @@ public class HepPlanner extends AbstractRelOptPlanner {
         }
         parentRel.replaceInput(i, preservedVertex);
       }
+      clearCache(parent);
       graph.removeEdge(parent, discardedVertex);
       graph.addEdge(parent, preservedVertex);
       updateVertex(parent, parentRel);
@@ -880,6 +870,28 @@ public class HepPlanner extends AbstractRelOptPlanner {
     }
   }
 
+  /**
+   * Clears metadata cache for the RelNode and its ancestors.
+   *
+   * @param vertex relnode
+   */
+  private void clearCache(HepRelVertex vertex) {
+    RelMdUtil.clearCache(vertex.getCurrentRel());
+    if (!RelMdUtil.clearCache(vertex)) {
+      return;
+    }
+    Queue<DefaultEdge> queue =
+        new ArrayDeque<>(graph.getInwardEdges(vertex));
+    while (!queue.isEmpty()) {
+      DefaultEdge edge = queue.remove();
+      HepRelVertex source = (HepRelVertex) edge.source;
+      RelMdUtil.clearCache(source.getCurrentRel());
+      if (RelMdUtil.clearCache(source)) {
+        queue.addAll(graph.getInwardEdges(source));
+      }
+    }
+  }
+
   private void updateVertex(HepRelVertex vertex, RelNode rel) {
     if (rel != vertex.getCurrentRel()) {
       // REVIEW jvs 5-Apr-2006:  We'll do this again later
@@ -889,11 +901,10 @@ public class HepPlanner extends AbstractRelOptPlanner {
       // reachable from here.
       notifyDiscard(vertex.getCurrentRel());
     }
-    String oldDigest = vertex.getCurrentRel().toString();
-    if (mapDigestToVertex.get(oldDigest) == vertex) {
-      mapDigestToVertex.remove(oldDigest);
+    RelDigest oldKey = vertex.getCurrentRel().getRelDigest();
+    if (mapDigestToVertex.get(oldKey) == vertex) {
+      mapDigestToVertex.remove(oldKey);
     }
-    String newDigest = rel.getDigest();
     // When a transformation happened in one rule apply, support
     // vertex2 replace vertex1, but the current relNode of
     // vertex1 and vertex2 is same,
@@ -901,7 +912,7 @@ public class HepPlanner extends AbstractRelOptPlanner {
     // otherwise the digest will be removed wrongly in the mapDigestToVertex
     //  when collectGC
     // so it must update the digest that map to vertex
-    mapDigestToVertex.put(newDigest, vertex);
+    mapDigestToVertex.put(rel.getRelDigest(), vertex);
     if (rel != vertex.getCurrentRel()) {
       vertex.replaceRel(rel);
     }
@@ -927,8 +938,9 @@ public class HepPlanner extends AbstractRelOptPlanner {
       }
       child = buildFinalPlan((HepRelVertex) child);
       rel.replaceInput(i, child);
-      rel.recomputeDigest();
     }
+    RelMdUtil.clearCache(rel);
+    rel.recomputeDigest();
 
     return rel;
   }
@@ -966,7 +978,7 @@ public class HepPlanner extends AbstractRelOptPlanner {
     graphSizeLastGC = graph.vertexSet().size();
 
     // Clean up digest map too.
-    Iterator<Map.Entry<String, HepRelVertex>> digestIter =
+    Iterator<Map.Entry<RelDigest, HepRelVertex>> digestIter =
         mapDigestToVertex.entrySet().iterator();
     while (digestIter.hasNext()) {
       HepRelVertex vertex = digestIter.next().getValue();
@@ -1016,12 +1028,12 @@ public class HepPlanner extends AbstractRelOptPlanner {
   }
 
   // implement RelOptPlanner
-  public void registerMetadataProviders(List<RelMetadataProvider> list) {
+  @Override public void registerMetadataProviders(List<RelMetadataProvider> list) {
     list.add(0, new HepRelMetadataProvider());
   }
 
   // implement RelOptPlanner
-  public long getRelMetadataTimestamp(RelNode rel) {
+  @Override public long getRelMetadataTimestamp(RelNode rel) {
     // TODO jvs 20-Apr-2006: This is overly conservative.  Better would be
     // to keep a timestamp per HepRelVertex, and update only affected
     // vertices and all ancestors on each transformation.
@@ -1036,5 +1048,3 @@ public class HepPlanner extends AbstractRelOptPlanner {
     materializations.add(materialization);
   }
 }
-
-// End HepPlanner.java

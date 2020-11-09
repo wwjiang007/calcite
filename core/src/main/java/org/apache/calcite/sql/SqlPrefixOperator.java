@@ -51,16 +51,16 @@ public class SqlPrefixOperator extends SqlOperator {
 
   //~ Methods ----------------------------------------------------------------
 
-  public SqlSyntax getSyntax() {
+  @Override public SqlSyntax getSyntax() {
     return SqlSyntax.PREFIX;
   }
 
-  public String getSignatureTemplate(final int operandsCount) {
+  @Override public String getSignatureTemplate(final int operandsCount) {
     Util.discard(operandsCount);
     return "{0}{1}";
   }
 
-  protected RelDataType adjustType(
+  @Override protected RelDataType adjustType(
       SqlValidator validator,
       SqlCall call,
       RelDataType type) {
@@ -89,7 +89,8 @@ public class SqlPrefixOperator extends SqlOperator {
 
   @Override public SqlMonotonicity getMonotonicity(SqlOperatorBinding call) {
     if (getName().equals("-")) {
-      return call.getOperandMonotonicity(0).reverse();
+      SqlMonotonicity monotonicity = call.getOperandMonotonicity(0);
+      return monotonicity == null ? null : monotonicity.reverse();
     }
 
     return super.getMonotonicity(call);
@@ -102,5 +103,3 @@ public class SqlPrefixOperator extends SqlOperator {
     return litmus.succeed();
   }
 }
-
-// End SqlPrefixOperator.java

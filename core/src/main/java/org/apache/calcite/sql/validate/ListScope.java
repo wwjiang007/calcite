@@ -24,7 +24,6 @@ import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -49,7 +48,7 @@ public abstract class ListScope extends DelegatingScope {
 
   //~ Constructors -----------------------------------------------------------
 
-  public ListScope(SqlValidatorScope parent) {
+  protected ListScope(SqlValidatorScope parent) {
     super(parent);
   }
 
@@ -67,7 +66,7 @@ public abstract class ListScope extends DelegatingScope {
    * @return list of child namespaces
    */
   public List<SqlValidatorNamespace> getChildren() {
-    return Lists.transform(children, scopeChild -> scopeChild.namespace);
+    return Util.transform(children, scopeChild -> scopeChild.namespace);
   }
 
   /**
@@ -76,7 +75,7 @@ public abstract class ListScope extends DelegatingScope {
    * @return list of child namespaces
    */
   List<String> getChildNames() {
-    return Lists.transform(children, scopeChild -> scopeChild.name);
+    return Util.transform(children, scopeChild -> scopeChild.name);
   }
 
   private ScopeChild findChild(List<String> names,
@@ -113,14 +112,14 @@ public abstract class ListScope extends DelegatingScope {
     return null;
   }
 
-  public void findAllColumnNames(List<SqlMoniker> result) {
+  @Override public void findAllColumnNames(List<SqlMoniker> result) {
     for (ScopeChild child : children) {
       addColumnNames(child.namespace, result);
     }
     parent.findAllColumnNames(result);
   }
 
-  public void findAliases(Collection<SqlMoniker> result) {
+  @Override public void findAliases(Collection<SqlMoniker> result) {
     for (ScopeChild child : children) {
       result.add(new SqlMonikerImpl(child.name, SqlMonikerType.TABLE));
     }
@@ -201,7 +200,7 @@ public abstract class ListScope extends DelegatingScope {
     super.resolve(names, nameMatcher, deep, resolved);
   }
 
-  public RelDataType resolveColumn(String columnName, SqlNode ctx) {
+  @Override public RelDataType resolveColumn(String columnName, SqlNode ctx) {
     final SqlNameMatcher nameMatcher = validator.catalogReader.nameMatcher();
     int found = 0;
     RelDataType type = null;
@@ -227,5 +226,3 @@ public abstract class ListScope extends DelegatingScope {
   }
 
 }
-
-// End ListScope.java

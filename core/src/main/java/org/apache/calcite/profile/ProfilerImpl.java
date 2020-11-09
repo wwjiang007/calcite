@@ -47,6 +47,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableSet;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
@@ -97,7 +98,7 @@ public class ProfilerImpl implements Profiler {
     this.predicate = predicate;
   }
 
-  public Profile profile(Iterable<List<Comparable>> rows,
+  @Override public Profile profile(Iterable<List<Comparable>> rows,
       final List<Column> columns, Collection<ImmutableBitSet> initialGroups) {
     return new Run(columns, initialGroups).profile(rows);
   }
@@ -433,7 +434,7 @@ public class ProfilerImpl implements Profiler {
 
     private ImmutableSortedSet<Column> toColumns(Iterable<Integer> ordinals) {
       return ImmutableSortedSet.copyOf(
-          Iterables.transform(ordinals, columns::get));
+          Util.transform(ordinals, columns::get));
     }
   }
 
@@ -499,6 +500,7 @@ public class ProfilerImpl implements Profiler {
     public Builder withMinimumSurprise(double v) {
       predicate =
           spaceColumnPair -> {
+            @SuppressWarnings("unused")
             final Space space = spaceColumnPair.left;
             return false;
           };
@@ -532,7 +534,7 @@ public class ProfilerImpl implements Profiler {
 
   /** Collector that collects values of a single column. */
   static class SingletonCollector extends Collector {
-    final SortedSet<Comparable> values = new TreeSet<>();
+    final NavigableSet<Comparable> values = new TreeSet<>();
     final int columnOrdinal;
     final int sketchThreshold;
     int nullCount = 0;
@@ -543,7 +545,7 @@ public class ProfilerImpl implements Profiler {
       this.sketchThreshold = sketchThreshold;
     }
 
-    public void add(List<Comparable> row) {
+    @Override public void add(List<Comparable> row) {
       final Comparable v = row.get(columnOrdinal);
       if (v == NullSentinel.INSTANCE) {
         nullCount++;
@@ -560,7 +562,7 @@ public class ProfilerImpl implements Profiler {
       }
     }
 
-    public void finish() {
+    @Override public void finish() {
       space.nullCount = nullCount;
       space.cardinality = values.size() + (nullCount > 0 ? 1 : 0);
       space.valueSet = values.size() < 20 ? values : null;
@@ -583,7 +585,7 @@ public class ProfilerImpl implements Profiler {
       this.sketchThreshold = sketchThreshold;
     }
 
-    public void add(List<Comparable> row) {
+    @Override public void add(List<Comparable> row) {
       if (space.columnOrdinals.equals(OF)) {
         Util.discard(0);
       }
@@ -619,7 +621,7 @@ public class ProfilerImpl implements Profiler {
       }
     }
 
-    public void finish() {
+    @Override public void finish() {
       // number of input rows (not distinct values)
       // that were null or partially null
       space.nullCount = nullCount;
@@ -660,7 +662,7 @@ public class ProfilerImpl implements Profiler {
       }
     }
 
-    public void finish() {
+    @Override public void finish() {
       space.nullCount = nullCount;
       space.cardinality = (int) sketch.getEstimate();
       space.valueSet = null;
@@ -676,7 +678,7 @@ public class ProfilerImpl implements Profiler {
       this.columnOrdinal = columnOrdinal;
     }
 
-    public void add(List<Comparable> row) {
+    @Override public void add(List<Comparable> row) {
       final Comparable value = row.get(columnOrdinal);
       if (value == NullSentinel.INSTANCE) {
         nullCount++;
@@ -698,7 +700,7 @@ public class ProfilerImpl implements Profiler {
       this.columnOrdinals = columnOrdinals;
     }
 
-    public void add(List<Comparable> row) {
+    @Override public void add(List<Comparable> row) {
       if (space.columnOrdinals.equals(OF)) {
         Util.discard(0);
       }
@@ -788,5 +790,3 @@ public class ProfilerImpl implements Profiler {
     }
   }
 }
-
-// End ProfilerImpl.java

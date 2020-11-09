@@ -49,7 +49,7 @@ public class RelXmlWriter extends RelWriterImpl {
 
   //~ Methods ----------------------------------------------------------------
 
-  protected void explain_(
+  @Override protected void explain_(
       RelNode rel,
       List<Pair<String, Object>> values) {
     if (generic) {
@@ -157,5 +157,3 @@ public class RelXmlWriter extends RelWriterImpl {
     spacer.subtract(2);
   }
 }
-
-// End RelXmlWriter.java

@@ -91,29 +91,31 @@ public class ResultSetEnumerable<T> extends AbstractEnumerable<T> {
             }
           };
         } else {
-          //noinspection unchecked
-          return (Function0) () -> {
-            try {
-              final List<Object> list = new ArrayList<>();
-              for (int i = 0; i < columnCount; i++) {
-                if (metaData.getColumnType(i + 1) == Types.TIMESTAMP) {
-                  long v = resultSet.getLong(i + 1);
-                  if (v == 0 && resultSet.wasNull()) {
-                    list.add(null);
-                  } else {
-                    list.add(v);
-                  }
-                } else {
-                  list.add(resultSet.getObject(i + 1));
-                }
-              }
-              return list.toArray();
-            } catch (SQLException e) {
-              throw new RuntimeException(e);
-            }
-          };
+          return () -> convertColumns(resultSet, metaData, columnCount);
         }
       };
+
+  private static Object[] convertColumns(ResultSet resultSet, ResultSetMetaData metaData,
+      int columnCount) {
+    final List<Object> list = new ArrayList<>(columnCount);
+    try {
+      for (int i = 0; i < columnCount; i++) {
+        if (metaData.getColumnType(i + 1) == Types.TIMESTAMP) {
+          long v = resultSet.getLong(i + 1);
+          if (v == 0 && resultSet.wasNull()) {
+            list.add(null);
+          } else {
+            list.add(v);
+          }
+        } else {
+          list.add(resultSet.getObject(i + 1));
+        }
+      }
+      return list.toArray();
+    } catch (SQLException e) {
+      throw new RuntimeException(e);
+    }
+  }
 
   private ResultSetEnumerable(
       DataSource dataSource,
@@ -133,12 +135,12 @@ public class ResultSetEnumerable<T> extends AbstractEnumerable<T> {
     this(dataSource, sql, rowBuilderFactory, null);
   }
 
-  /** Creates an ResultSetEnumerable. */
+  /** Creates a ResultSetEnumerable. */
   public static ResultSetEnumerable<Object> of(DataSource dataSource, String sql) {
     return of(dataSource, sql, AUTO_ROW_BUILDER_FACTORY);
   }
 
-  /** Creates an ResultSetEnumerable that retrieves columns as specific
+  /** Creates a ResultSetEnumerable that retrieves columns as specific
    * Java types. */
   public static ResultSetEnumerable<Object> of(DataSource dataSource, String sql,
       Primitive[] primitives) {
@@ -246,7 +248,7 @@ public class ResultSetEnumerable<T> extends AbstractEnumerable<T> {
     }
   }
 
-  public Enumerator<T> enumerator() {
+  @Override public Enumerator<T> enumerator() {
     if (preparedStatementEnricher == null) {
       return enumeratorBasedOnStatement();
     } else {
@@ -361,11 +363,11 @@ public class ResultSetEnumerable<T> extends AbstractEnumerable<T> {
       this.rowBuilder = rowBuilderFactory.apply(resultSet);
     }
 
-    public T current() {
+    @Override public T current() {
       return rowBuilder.apply();
     }
 
-    public boolean moveNext() {
+    @Override public boolean moveNext() {
       try {
         return resultSet.next();
       } catch (SQLException e) {
@@ -373,7 +375,7 @@ public class ResultSetEnumerable<T> extends AbstractEnumerable<T> {
       }
     }
 
-    public void reset() {
+    @Override public void reset() {
       try {
         resultSet.beforeFirst();
       } catch (SQLException e) {
@@ -381,7 +383,7 @@ public class ResultSetEnumerable<T> extends AbstractEnumerable<T> {
       }
     }
 
-    public void close() {
+    @Override public void close() {
       ResultSet savedResultSet = resultSet;
       if (savedResultSet != null) {
         try {
@@ -423,19 +425,21 @@ public class ResultSetEnumerable<T> extends AbstractEnumerable<T> {
           }
         };
       }
-      //noinspection unchecked
-      return (Function0) () -> {
-        try {
-          final List<Object> list = new ArrayList<>();
-          for (int i = 0; i < columnCount; i++) {
-            list.add(primitives[i].jdbcGet(resultSet, i + 1));
-          }
-          return list.toArray();
-        } catch (SQLException e) {
-          throw new RuntimeException(e);
-        }
-      };
+      return () -> convertPrimitiveColumns(primitives, resultSet, columnCount);
     };
+  }
+
+  private static Object[] convertPrimitiveColumns(Primitive[] primitives,
+      ResultSet resultSet, int columnCount) {
+    final List<Object> list = new ArrayList<>(columnCount);
+    try {
+      for (int i = 0; i < columnCount; i++) {
+        list.add(primitives[i].jdbcGet(resultSet, i + 1));
+      }
+      return list.toArray();
+    } catch (SQLException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   /**
@@ -446,5 +450,3 @@ public class ResultSetEnumerable<T> extends AbstractEnumerable<T> {
     void enrich(PreparedStatement statement) throws SQLException;
   }
 }
-
-// End ResultSetEnumerable.java

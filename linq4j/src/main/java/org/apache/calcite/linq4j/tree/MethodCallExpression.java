@@ -30,9 +30,7 @@ public class MethodCallExpression extends Expression {
   public final Method method;
   public final Expression targetExpression; // null for call to static method
   public final List<Expression> expressions;
-  /**
-   * Cache the hash code for the expression
-   */
+  /** Cached hash code for the expression. */
   private int hash;
 
   MethodCallExpression(Type returnType, Method method,
@@ -62,7 +60,7 @@ public class MethodCallExpression extends Expression {
     return shuttle.visit(this, targetExpression, expressions);
   }
 
-  public <R> R accept(Visitor<R> visitor) {
+  @Override public <R> R accept(Visitor<R> visitor) {
     return visitor.visit(this);
   }
 
@@ -147,5 +145,3 @@ public class MethodCallExpression extends Expression {
     return result;
   }
 }
-
-// End MethodCallExpression.java

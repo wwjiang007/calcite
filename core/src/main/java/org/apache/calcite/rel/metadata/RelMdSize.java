@@ -20,14 +20,15 @@ import org.apache.calcite.avatica.util.ByteString;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.AggregateCall;
+import org.apache.calcite.rel.core.Calc;
 import org.apache.calcite.rel.core.Exchange;
 import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Intersect;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.Minus;
 import org.apache.calcite.rel.core.Project;
-import org.apache.calcite.rel.core.SemiJoin;
 import org.apache.calcite.rel.core.Sort;
+import org.apache.calcite.rel.core.TableModify;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.core.Union;
 import org.apache.calcite.rel.core.Values;
@@ -73,7 +74,7 @@ public class RelMdSize implements MetadataHandler<BuiltInMetadata.Size> {
 
   //~ Methods ----------------------------------------------------------------
 
-  public MetadataDef<BuiltInMetadata.Size> getDef() {
+  @Override public MetadataDef<BuiltInMetadata.Size> getDef() {
     return BuiltInMetadata.Size.DEF;
   }
 
@@ -119,6 +120,10 @@ public class RelMdSize implements MetadataHandler<BuiltInMetadata.Size> {
     return mq.getAverageColumnSizes(rel.getInput());
   }
 
+  public List<Double> averageColumnSizes(TableModify rel, RelMetadataQuery mq) {
+    return mq.getAverageColumnSizes(rel.getInput());
+  }
+
   public List<Double> averageColumnSizes(Exchange rel, RelMetadataQuery mq) {
     return mq.getAverageColumnSizes(rel.getInput());
   }
@@ -131,6 +136,16 @@ public class RelMdSize implements MetadataHandler<BuiltInMetadata.Size> {
     for (RexNode project : rel.getProjects()) {
       sizes.add(averageRexSize(project, inputColumnSizes));
     }
+    return sizes.build();
+  }
+
+  public List<Double> averageColumnSizes(Calc rel, RelMetadataQuery mq) {
+    final List<Double> inputColumnSizes =
+        mq.getAverageColumnSizesNotNull(rel.getInput());
+    final ImmutableNullableList.Builder<Double> sizes =
+        ImmutableNullableList.builder();
+    rel.getProgram().split().left.forEach(
+        exp -> sizes.add(averageRexSize(exp, inputColumnSizes)));
     return sizes.build();
   }
 
@@ -177,21 +192,17 @@ public class RelMdSize implements MetadataHandler<BuiltInMetadata.Size> {
     return list.build();
   }
 
-  public List<Double> averageColumnSizes(SemiJoin rel, RelMetadataQuery mq) {
-    return averageJoinColumnSizes(rel, mq, true);
-  }
-
   public List<Double> averageColumnSizes(Join rel, RelMetadataQuery mq) {
-    return averageJoinColumnSizes(rel, mq, false);
+    return averageJoinColumnSizes(rel, mq);
   }
 
-  private List<Double> averageJoinColumnSizes(Join rel, RelMetadataQuery mq,
-      boolean semijoin) {
+  private List<Double> averageJoinColumnSizes(Join rel, RelMetadataQuery mq) {
+    boolean semiOrAntijoin = !rel.getJoinType().projectsRight();
     final RelNode left = rel.getLeft();
     final RelNode right = rel.getRight();
     final List<Double> lefts = mq.getAverageColumnSizes(left);
     final List<Double> rights =
-        semijoin ? null : mq.getAverageColumnSizes(right);
+        semiOrAntijoin ? null : mq.getAverageColumnSizes(right);
     if (lefts == null && rights == null) {
       return null;
     }
@@ -231,6 +242,8 @@ public class RelMdSize implements MetadataHandler<BuiltInMetadata.Size> {
       return null; // all were null
     case 1:
       return inputColumnSizeList.get(0); // all but one were null
+    default:
+      break;
     }
     final ImmutableNullableList.Builder<Double> sizes =
         ImmutableNullableList.builder();
@@ -396,5 +409,3 @@ public class RelMdSize implements MetadataHandler<BuiltInMetadata.Size> {
     }
   }
 }
-
-// End RelMdSize.java

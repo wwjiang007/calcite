@@ -129,12 +129,12 @@ public class ReflectiveConvertletTable implements SqlRexConvertletTable {
     });
   }
 
-  public SqlRexConvertlet get(SqlCall call) {
+  @Override public SqlRexConvertlet get(SqlCall call) {
     SqlRexConvertlet convertlet;
     final SqlOperator op = call.getOperator();
 
     // Is there a convertlet for this operator
-    // (e.g. SqlStdOperatorTable.plusOperator)?
+    // (e.g. SqlStdOperatorTable.PLUS)?
     convertlet = (SqlRexConvertlet) map.get(op);
     if (convertlet != null) {
       return convertlet;
@@ -165,7 +165,7 @@ public class ReflectiveConvertletTable implements SqlRexConvertletTable {
   }
 
   /**
-   * Registers a convertlet for a given operator instance
+   * Registers a convertlet for a given operator instance.
    *
    * @param op         Operator instance, say
    * {@link org.apache.calcite.sql.fun.SqlStdOperatorTable#MINUS}
@@ -192,5 +192,3 @@ public class ReflectiveConvertletTable implements SqlRexConvertletTable {
         });
   }
 }
-
-// End ReflectiveConvertletTable.java

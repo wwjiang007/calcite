@@ -23,9 +23,11 @@ import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.prepare.Prepare;
+import org.apache.calcite.rel.RelInput;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.SingleRel;
+import org.apache.calcite.rel.externalize.RelEnumTypes;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
@@ -122,7 +124,11 @@ public abstract class TableModify extends SingleRel {
       Preconditions.checkArgument(sourceExpressionList.size()
           == updateColumnList.size());
     } else {
-      Preconditions.checkArgument(updateColumnList == null);
+      if (operation == Operation.MERGE) {
+        Objects.requireNonNull(updateColumnList);
+      } else {
+        Preconditions.checkArgument(updateColumnList == null);
+      }
       Preconditions.checkArgument(sourceExpressionList == null);
     }
     if (table.getRelOptSchema() != null) {
@@ -131,13 +137,28 @@ public abstract class TableModify extends SingleRel {
     this.flattened = flattened;
   }
 
+  /**
+   * Creates a TableModify by parsing serialized output.
+   */
+  protected TableModify(RelInput input) {
+    this(input.getCluster(),
+        input.getTraitSet(),
+        input.getTable("table"),
+        (Prepare.CatalogReader) input.getTable("table").getRelOptSchema(),
+        input.getInput(),
+        input.getEnum("operation", Operation.class),
+        input.getStringList("updateColumnList"),
+        input.getExpressionList("sourceExpressionList"),
+        input.getBoolean("flattened", false));
+  }
+
   //~ Methods ----------------------------------------------------------------
 
   public Prepare.CatalogReader getCatalogReader() {
     return catalogReader;
   }
 
-  public RelOptTable getTable() {
+  @Override public RelOptTable getTable() {
     return table;
   }
 
@@ -220,7 +241,7 @@ public abstract class TableModify extends SingleRel {
   @Override public RelWriter explainTerms(RelWriter pw) {
     return super.explainTerms(pw)
         .item("table", table.getQualifiedName())
-        .item("operation", getOperation())
+        .item("operation", RelEnumTypes.fromEnum(getOperation()))
         .itemIf("updateColumnList", updateColumnList, updateColumnList != null)
         .itemIf("sourceExpressionList", sourceExpressionList,
             sourceExpressionList != null)
@@ -234,5 +255,3 @@ public abstract class TableModify extends SingleRel {
     return planner.getCostFactory().makeCost(rowCount, 0, 0);
   }
 }
-
-// End TableModify.java

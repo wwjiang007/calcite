@@ -16,12 +16,10 @@
  */
 package org.apache.calcite.sql.fun;
 
-import org.apache.calcite.prepare.CalciteCatalogReader;
-import org.apache.calcite.runtime.GeoFunctions;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorTable;
-import org.apache.calcite.sql.util.ChainedSqlOperatorTable;
 import org.apache.calcite.sql.util.ListSqlOperatorTable;
+import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.util.Util;
 
 import com.google.common.cache.CacheBuilder;
@@ -41,7 +39,7 @@ import java.util.concurrent.ExecutionException;
  *
  * <blockquote>
  *   <pre>SqlOperatorTable opTab =
- *     SqlDialectOperatorTableFactory.INSTANCE.getOperatorTable(
+ *     SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(
  *         EnumSet.of(SqlLibrary.ORACLE, SqlLibrary.MYSQL))</pre>
  * </blockquote>
  *
@@ -85,9 +83,7 @@ public class SqlLibraryOperatorTableFactory {
         standard = true;
         break;
       case SPATIAL:
-        list.addAll(
-            CalciteCatalogReader.operatorTable(GeoFunctions.class.getName())
-                .getOperatorList());
+        list.addAll(SqlOperatorTables.spatialInstance().getOperatorList());
         break;
       default:
         custom = true;
@@ -107,8 +103,7 @@ public class SqlLibraryOperatorTableFactory {
               }
             }
           } catch (IllegalArgumentException | IllegalAccessException e) {
-            Util.throwIfUnchecked(e.getCause());
-            throw new RuntimeException(e.getCause());
+            throw Util.throwAsRuntime(Util.causeOrSelf(e));
           }
         }
       }
@@ -116,7 +111,7 @@ public class SqlLibraryOperatorTableFactory {
     SqlOperatorTable operatorTable = new ListSqlOperatorTable(list.build());
     if (standard) {
       operatorTable =
-          ChainedSqlOperatorTable.of(SqlStdOperatorTable.instance(),
+          SqlOperatorTables.chain(SqlStdOperatorTable.instance(),
               operatorTable);
     }
     return operatorTable;
@@ -156,11 +151,8 @@ public class SqlLibraryOperatorTableFactory {
     try {
       return cache.get(ImmutableSet.copyOf(librarySet));
     } catch (ExecutionException e) {
-      Util.throwIfUnchecked(e.getCause());
-      throw new RuntimeException("populating SqlOperatorTable for library "
-          + librarySet, e);
+      throw Util.throwAsRuntime("populating SqlOperatorTable for library "
+          + librarySet, Util.causeOrSelf(e));
     }
   }
 }
-
-// End SqlLibraryOperatorTableFactory.java

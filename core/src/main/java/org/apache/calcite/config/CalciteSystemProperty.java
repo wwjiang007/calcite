@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.config;
 
+import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableSet;
 
 import java.io.File;
@@ -66,6 +67,41 @@ public final class CalciteSystemProperty<T> {
   public static final CalciteSystemProperty<Boolean> COMMUTE =
       booleanProperty("calcite.enable.join.commute", false);
 
+  /** Whether to enable the collation trait in the default planner configuration.
+   *
+   * <p>Some extra optimizations are possible if enabled, but queries should
+   * work either way. At some point this will become a preference, or we will
+   * run multiple phases: first disabled, then enabled. */
+  public static final CalciteSystemProperty<Boolean> ENABLE_COLLATION_TRAIT =
+      booleanProperty("calcite.enable.collation.trait", true);
+
+  /** Whether the enumerable convention is enabled in the default planner configuration. */
+  public static final CalciteSystemProperty<Boolean> ENABLE_ENUMERABLE =
+      booleanProperty("calcite.enable.enumerable", true);
+
+  /** Whether the EnumerableTableScan should support ARRAY fields. */
+  public static final CalciteSystemProperty<Boolean> ENUMERABLE_ENABLE_TABLESCAN_ARRAY =
+      booleanProperty("calcite.enable.enumerable.tablescan.array", false);
+
+  /** Whether the EnumerableTableScan should support MAP fields. */
+  public static final CalciteSystemProperty<Boolean> ENUMERABLE_ENABLE_TABLESCAN_MAP =
+      booleanProperty("calcite.enable.enumerable.tablescan.map", false);
+
+  /** Whether the EnumerableTableScan should support MULTISET fields. */
+  public static final CalciteSystemProperty<Boolean> ENUMERABLE_ENABLE_TABLESCAN_MULTISET =
+      booleanProperty("calcite.enable.enumerable.tablescan.multiset", false);
+
+  /** Whether streaming is enabled in the default planner configuration. */
+  public static final CalciteSystemProperty<Boolean> ENABLE_STREAM =
+      booleanProperty("calcite.enable.stream", true);
+
+  /**
+   * Whether RexNode digest should be normalized (e.g. call operands ordered).
+   * <p>Normalization helps to treat $0=$1 and $1=$0 expressions equal, thus it saves efforts
+   * on planning.</p> */
+  public static final CalciteSystemProperty<Boolean> ENABLE_REX_DIGEST_NORMALIZE =
+      booleanProperty("calcite.enable.rexnode.digest.normalize", true);
+
   /**
    *  Whether to follow the SQL standard strictly.
    */
@@ -84,6 +120,16 @@ public final class CalciteSystemProperty<T> {
    */
   public static final CalciteSystemProperty<Boolean> DUMP_SETS =
       booleanProperty("calcite.volcano.dump.sets", true);
+
+  /**
+   * Whether to enable top-down optimization. This config can be overridden
+   * by {@link CalciteConnectionProperty#TOPDOWN_OPT}.
+   *
+   * <p>Note: Enabling top-down optimization will automatically disable
+   * the use of AbstractConverter and related rules.</p>
+   */
+  public static final CalciteSystemProperty<Boolean> TOPDOWN_OPT =
+      booleanProperty("calcite.planner.topdown.opt", false);
 
   /**
    * Whether to run integration tests.
@@ -155,12 +201,6 @@ public final class CalciteSystemProperty<T> {
       });
 
   /**
-   * Whether to run slow tests.
-   */
-  public static final CalciteSystemProperty<Boolean> TEST_SLOW =
-      booleanProperty("calcite.test.slow", false);
-
-  /**
    * Whether to run MongoDB tests.
    */
   public static final CalciteSystemProperty<Boolean> TEST_MONGODB =
@@ -179,13 +219,25 @@ public final class CalciteSystemProperty<T> {
    * Whether to run Druid tests.
    */
   public static final CalciteSystemProperty<Boolean> TEST_DRUID =
-      booleanProperty("calcite.test.druid", true);
+      booleanProperty("calcite.test.druid", false);
 
   /**
    * Whether to run Cassandra tests.
    */
   public static final CalciteSystemProperty<Boolean> TEST_CASSANDRA =
       booleanProperty("calcite.test.cassandra", true);
+
+  /**
+   * Whether to run InnoDB tests.
+   */
+  public static final CalciteSystemProperty<Boolean> TEST_INNODB =
+      booleanProperty("calcite.test.innodb", true);
+
+  /**
+   * Whether to run Redis tests.
+   */
+  public static final CalciteSystemProperty<Boolean> TEST_REDIS =
+      booleanProperty("calcite.test.redis", true);
 
   /**
    * A list of ids designating the queries
@@ -242,12 +294,14 @@ public final class CalciteSystemProperty<T> {
 
   /**
    * The strength of the default collation.
+   * Allowed values (as defined in {@link java.text.Collator}) are: primary, secondary,
+   * tertiary, identical.
    *
    * <p>It is used in {@link org.apache.calcite.sql.SqlCollation} and
    * {@link org.apache.calcite.sql.SqlLiteral#SqlLiteral}.</p>
    */
   // TODO review zabetak:
-  // What are the allowed values? What happens if a wrong value is specified?
+  // What happens if a wrong value is specified?
   public static final CalciteSystemProperty<String> DEFAULT_COLLATION_STRENGTH =
       stringProperty("calcite.default.collation.strength", "primary");
 
@@ -296,9 +350,12 @@ public final class CalciteSystemProperty<T> {
       intProperty("calcite.bindable.cache.concurrencyLevel", 1,
           v -> v >= 1 && v <= Integer.MAX_VALUE);
 
-  private static CalciteSystemProperty<Boolean> booleanProperty(String key, boolean defaultValue) {
+  private static CalciteSystemProperty<Boolean> booleanProperty(String key,
+      boolean defaultValue) {
+    // Note that "" -> true (convenient for command-lines flags like '-Dflag')
     return new CalciteSystemProperty<>(key,
-        v -> v == null ? defaultValue : Boolean.parseBoolean(v));
+        v -> v == null ? defaultValue
+            : "".equals(v) || Boolean.parseBoolean(v));
   }
 
   private static CalciteSystemProperty<Integer> intProperty(String key, int defaultValue) {
@@ -306,8 +363,9 @@ public final class CalciteSystemProperty<T> {
   }
 
   /**
-   * Returns the value of the system property with the specified name as int, or
-   * the <code>defaultValue</code> if any of the conditions below hold:
+   * Returns the value of the system property with the specified name as {@code
+   * int}. If any of the conditions below hold, returns the
+   * <code>defaultValue</code>:
    *
    * <ol>
    * <li>the property is not defined;
@@ -349,9 +407,11 @@ public final class CalciteSystemProperty<T> {
 
   private static Properties loadProperties() {
     Properties saffronProperties = new Properties();
+    ClassLoader classLoader = MoreObjects.firstNonNull(
+        Thread.currentThread().getContextClassLoader(),
+        CalciteSystemProperty.class.getClassLoader());
     // Read properties from the file "saffron.properties", if it exists in classpath
-    try (InputStream stream = CalciteSystemProperty.class.getClassLoader()
-        .getResourceAsStream("saffron.properties")) {
+    try (InputStream stream = classLoader.getResourceAsStream("saffron.properties")) {
       if (stream != null) {
         saffronProperties.load(stream);
       }
@@ -361,20 +421,21 @@ public final class CalciteSystemProperty<T> {
       // we're in a sandbox
     }
 
-    Properties allProperties = new Properties();
-    // Merge system and saffron properties mapping deprecated saffron namespaces to calcite
+    // Merge system and saffron properties, mapping deprecated saffron
+    // namespaces to calcite
+    final Properties allProperties = new Properties();
     Stream.concat(
         saffronProperties.entrySet().stream(),
-        System.getProperties().entrySet().stream()).
-        forEach(prop -> {
-            String deprecatedKey = (String) prop.getKey();
-            String newKey = deprecatedKey
-                .replace("net.sf.saffron.", "calcite.")
-                .replace("saffron.", "calcite.");
-            if (newKey.startsWith("calcite.")) {
-              allProperties.setProperty(newKey, (String) prop.getValue());
-            }
-          });
+        System.getProperties().entrySet().stream())
+        .forEach(prop -> {
+          String deprecatedKey = (String) prop.getKey();
+          String newKey = deprecatedKey
+              .replace("net.sf.saffron.", "calcite.")
+              .replace("saffron.", "calcite.");
+          if (newKey.startsWith("calcite.")) {
+            allProperties.setProperty(newKey, (String) prop.getValue());
+          }
+        });
     return allProperties;
   }
 
@@ -394,5 +455,3 @@ public final class CalciteSystemProperty<T> {
     return value;
   }
 }
-
-// End CalciteSystemProperty.java

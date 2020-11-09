@@ -59,13 +59,17 @@ public class SqlSingleValueAggFunction extends SqlAggFunction {
 
   //~ Methods ----------------------------------------------------------------
 
+  @Override public boolean allowsFilter() {
+    return false;
+  }
+
   @SuppressWarnings("deprecation")
-  public List<RelDataType> getParameterTypes(RelDataTypeFactory typeFactory) {
+  @Override public List<RelDataType> getParameterTypes(RelDataTypeFactory typeFactory) {
     return ImmutableList.of(type);
   }
 
   @SuppressWarnings("deprecation")
-  public RelDataType getReturnType(RelDataTypeFactory typeFactory) {
+  @Override public RelDataType getReturnType(RelDataTypeFactory typeFactory) {
     return type;
   }
 
@@ -74,5 +78,3 @@ public class SqlSingleValueAggFunction extends SqlAggFunction {
     return type;
   }
 }
-
-// End SqlSingleValueAggFunction.java

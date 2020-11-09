@@ -17,8 +17,6 @@
 package org.apache.calcite.schema;
 
 import org.apache.calcite.rel.RelCollation;
-import org.apache.calcite.rel.RelDistribution;
-import org.apache.calcite.rel.RelDistributionTraitDef;
 import org.apache.calcite.rel.RelReferentialConstraint;
 import org.apache.calcite.util.ImmutableBitSet;
 
@@ -36,38 +34,19 @@ public class Statistics {
   /** Returns a {@link Statistic} that knows nothing about a table. */
   public static final Statistic UNKNOWN =
       new Statistic() {
-        public Double getRowCount() {
-          return null;
-        }
-
-        public boolean isKey(ImmutableBitSet columns) {
-          return false;
-        }
-
-        public List<RelReferentialConstraint> getReferentialConstraints() {
-          return ImmutableList.of();
-        }
-
-        public List<RelCollation> getCollations() {
-          return ImmutableList.of();
-        }
-
-        public RelDistribution getDistribution() {
-          return RelDistributionTraitDef.INSTANCE.getDefault();
-        }
       };
 
   /** Returns a statistic with a given set of referential constraints. */
   public static Statistic of(final List<RelReferentialConstraint> referentialConstraints) {
-    return of(null, ImmutableList.of(),
-        referentialConstraints, ImmutableList.of());
+    return of(null, null,
+        referentialConstraints, null);
   }
 
   /** Returns a statistic with a given row count and set of unique keys. */
   public static Statistic of(final double rowCount,
       final List<ImmutableBitSet> keys) {
-    return of(rowCount, keys, ImmutableList.of(),
-        ImmutableList.of());
+    return of(rowCount, keys, null,
+        null);
   }
 
   /** Returns a statistic with a given row count, set of unique keys,
@@ -75,7 +54,7 @@ public class Statistics {
   public static Statistic of(final double rowCount,
       final List<ImmutableBitSet> keys,
       final List<RelCollation> collations) {
-    return of(rowCount, keys, ImmutableList.of(), collations);
+    return of(rowCount, keys, null, collations);
   }
 
   /** Returns a statistic with a given row count, set of unique keys,
@@ -84,13 +63,19 @@ public class Statistics {
       final List<ImmutableBitSet> keys,
       final List<RelReferentialConstraint> referentialConstraints,
       final List<RelCollation> collations) {
+    List<ImmutableBitSet> keysCopy = keys == null ? ImmutableList.of() : ImmutableList.copyOf(keys);
+    List<RelReferentialConstraint> referentialConstraintsCopy =
+        referentialConstraints == null ? null : ImmutableList.copyOf(referentialConstraints);
+    List<RelCollation> collationsCopy =
+        collations == null ? null : ImmutableList.copyOf(collations);
+
     return new Statistic() {
-      public Double getRowCount() {
+      @Override public Double getRowCount() {
         return rowCount;
       }
 
-      public boolean isKey(ImmutableBitSet columns) {
-        for (ImmutableBitSet key : keys) {
+      @Override public boolean isKey(ImmutableBitSet columns) {
+        for (ImmutableBitSet key : keysCopy) {
           if (columns.contains(key)) {
             return true;
           }
@@ -98,19 +83,17 @@ public class Statistics {
         return false;
       }
 
-      public List<RelReferentialConstraint> getReferentialConstraints() {
-        return referentialConstraints;
+      @Override public List<ImmutableBitSet> getKeys() {
+        return keysCopy;
       }
 
-      public List<RelCollation> getCollations() {
-        return collations;
+      @Override public List<RelReferentialConstraint> getReferentialConstraints() {
+        return referentialConstraintsCopy;
       }
 
-      public RelDistribution getDistribution() {
-        return RelDistributionTraitDef.INSTANCE.getDefault();
+      @Override public List<RelCollation> getCollations() {
+        return collationsCopy;
       }
     };
   }
 }
-
-// End Statistics.java

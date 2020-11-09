@@ -213,25 +213,22 @@ public class DruidTable extends AbstractTable implements TranslatableTable {
             || kind == SqlKind.TIMES;
   }
 
-  /**
-   * Returns the list of {@link ComplexMetric} that match the given <code>alias</code> if it exists,
-   * otherwise returns an empty list, never <code>null</code>
-   * */
+  /** Returns the list of {@link ComplexMetric} that match the given
+   * <code>alias</code> if it exists, otherwise returns an empty list, never
+   * <code>null</code>. */
   public List<ComplexMetric> getComplexMetricsFrom(String alias) {
     return complexMetrics.containsKey(alias)
             ? complexMetrics.get(alias)
             : new ArrayList<>();
   }
 
-  /**
-   * Returns true if and only if the given <code>alias</code> is a reference to a registered
-   * {@link ComplexMetric}
-   * */
+  /** Returns whether the given <code>alias</code> is a reference to a
+   * registered {@link ComplexMetric}. */
   public boolean isComplexMetric(String alias) {
     return complexMetrics.get(alias) != null;
   }
 
-  public RelDataType getRowType(RelDataTypeFactory typeFactory) {
+  @Override public RelDataType getRowType(RelDataTypeFactory typeFactory) {
     final RelDataType rowType = protoRowType.apply(typeFactory);
     final List<String> fieldNames = rowType.getFieldNames();
     Preconditions.checkArgument(fieldNames.contains(timestampFieldName));
@@ -239,10 +236,10 @@ public class DruidTable extends AbstractTable implements TranslatableTable {
     return rowType;
   }
 
-  public RelNode toRel(RelOptTable.ToRelContext context,
+  @Override public RelNode toRel(RelOptTable.ToRelContext context,
       RelOptTable relOptTable) {
     final RelOptCluster cluster = context.getCluster();
-    final TableScan scan = LogicalTableScan.create(cluster, relOptTable);
+    final TableScan scan = LogicalTableScan.create(cluster, relOptTable, ImmutableList.of());
     return DruidQuery.create(cluster,
         cluster.traitSetOf(BindableConvention.INSTANCE), relOptTable, this,
         ImmutableList.of(scan));
@@ -268,7 +265,7 @@ public class DruidTable extends AbstractTable implements TranslatableTable {
       this.timestampColumn = timestampColumn;
     }
 
-    public RelDataType apply(RelDataTypeFactory typeFactory) {
+    @Override public RelDataType apply(RelDataTypeFactory typeFactory) {
       final RelDataTypeFactory.Builder builder = typeFactory.builder();
       for (Map.Entry<String, SqlTypeName> field : fields.entrySet()) {
         final String key = field.getKey();
@@ -280,5 +277,3 @@ public class DruidTable extends AbstractTable implements TranslatableTable {
     }
   }
 }
-
-// End DruidTable.java

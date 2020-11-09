@@ -120,7 +120,7 @@ public final class LogicalFilter extends Filter {
     return variablesSet;
   }
 
-  public LogicalFilter copy(RelTraitSet traitSet, RelNode input,
+  @Override public LogicalFilter copy(RelTraitSet traitSet, RelNode input,
       RexNode condition) {
     assert traitSet.containsIfApplicable(Convention.NONE);
     return new LogicalFilter(getCluster(), traitSet, input, condition,
@@ -135,6 +135,13 @@ public final class LogicalFilter extends Filter {
     return super.explainTerms(pw)
         .itemIf("variablesSet", variablesSet, !variablesSet.isEmpty());
   }
-}
 
-// End LogicalFilter.java
+  @Override public boolean deepEquals(Object obj) {
+    return deepEquals0(obj)
+        && variablesSet.equals(((LogicalFilter) obj).variablesSet);
+  }
+
+  @Override public int deepHashCode() {
+    return Objects.hash(deepHashCode0(), variablesSet);
+  }
+}

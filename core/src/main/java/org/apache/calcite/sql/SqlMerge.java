@@ -63,7 +63,7 @@ public class SqlMerge extends SqlCall {
 
   //~ Methods ----------------------------------------------------------------
 
-  public SqlOperator getOperator() {
+  @Override public SqlOperator getOperator() {
     return OPERATOR;
   }
 
@@ -71,7 +71,7 @@ public class SqlMerge extends SqlCall {
     return SqlKind.MERGE;
   }
 
-  public List<SqlNode> getOperandList() {
+  @Override public List<SqlNode> getOperandList() {
     return ImmutableNullableList.of(targetTable, condition, source, updateCall,
         insertCall, sourceSelect, alias);
   }
@@ -105,23 +105,17 @@ public class SqlMerge extends SqlCall {
     }
   }
 
-  /**
-   * @return the identifier for the target table of the merge
-   */
+  /** Return the identifier for the target table of this MERGE. */
   public SqlNode getTargetTable() {
     return targetTable;
   }
 
-  /**
-   * @return the alias for the target table of the merge
-   */
+  /** Returns the alias for the target table of this MERGE. */
   public SqlIdentifier getAlias() {
     return alias;
   }
 
-  /**
-   * @return the source for the merge
-   */
+  /** Returns the source query of this MERGE. */
   public SqlNode getSourceTableRef() {
     return source;
   }
@@ -130,23 +124,18 @@ public class SqlMerge extends SqlCall {
     this.source = tableRef;
   }
 
-  /**
-   * @return the update statement for the merge
-   */
+  /** Returns the UPDATE statement for this MERGE. */
   public SqlUpdate getUpdateCall() {
     return updateCall;
   }
 
-  /**
-   * @return the insert statement for the merge
-   */
+  /** Returns the INSERT statement for this MERGE. */
   public SqlInsert getInsertCall() {
     return insertCall;
   }
 
-  /**
-   * @return the condition expression to determine whether to update or insert
-   */
+  /** Returns the condition expression to determine whether to UPDATE or
+   * INSERT. */
   public SqlNode getCondition() {
     return condition;
   }
@@ -218,9 +207,7 @@ public class SqlMerge extends SqlCall {
     }
   }
 
-  public void validate(SqlValidator validator, SqlValidatorScope scope) {
+  @Override public void validate(SqlValidator validator, SqlValidatorScope scope) {
     validator.validateMerge(this);
   }
 }
-
-// End SqlMerge.java

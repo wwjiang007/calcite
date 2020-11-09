@@ -36,6 +36,7 @@ import java.util.Collection;
  * <p>All sub-classes of RexNode are immutable.</p>
  */
 public abstract class RexNode {
+
   //~ Instance fields --------------------------------------------------------
 
   // Effectively final. Set in each sub-class constructor, and never re-set.
@@ -78,8 +79,20 @@ public abstract class RexNode {
     return SqlKind.OTHER;
   }
 
-  public String toString() {
+  @Override public String toString() {
     return digest;
+  }
+
+  /** Returns the number of nodes in this expression.
+   *
+   * <p>Leaf nodes, such as {@link RexInputRef} or {@link RexLiteral}, have
+   * a count of 1. Calls have a count of 1 plus the sum of their operands.
+   *
+   * <p>Node count is a measure of expression complexity that is used by some
+   * planner rules to prevent deeply nested expressions.
+   */
+  public int nodeCount() {
+    return 1;
   }
 
   /**
@@ -110,5 +123,3 @@ public abstract class RexNode {
    */
   @Override public abstract int hashCode();
 }
-
-// End RexNode.java

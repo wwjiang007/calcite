@@ -88,7 +88,7 @@ class AggChecker extends SqlBasicVisitor<Void> {
     return false;
   }
 
-  public Void visit(SqlIdentifier id) {
+  @Override public Void visit(SqlIdentifier id) {
     if (isGroupExpr(id) || id.isStar()) {
       // Star may validly occur in "SELECT COUNT(*) OVER w"
       return null;
@@ -116,7 +116,7 @@ class AggChecker extends SqlBasicVisitor<Void> {
             : RESOURCE.notGroupExpr(exprString));
   }
 
-  public Void visit(SqlCall call) {
+  @Override public Void visit(SqlCall call) {
     final SqlValidatorScope scope = scopes.peek();
     if (call.getOperator().isAggregator()) {
       if (distinct) {
@@ -155,6 +155,8 @@ class AggChecker extends SqlBasicVisitor<Void> {
     case IGNORE_NULLS:
       call.operand(0).accept(this);
       return null;
+    default:
+      break;
     }
     // Visit the operand in window function
     if (call.getKind() == SqlKind.OVER) {
@@ -217,5 +219,3 @@ class AggChecker extends SqlBasicVisitor<Void> {
   }
 
 }
-
-// End AggChecker.java

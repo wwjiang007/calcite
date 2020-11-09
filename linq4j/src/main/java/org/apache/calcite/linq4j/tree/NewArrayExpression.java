@@ -28,9 +28,7 @@ public class NewArrayExpression extends Expression {
   public final int dimension;
   public final Expression bound;
   public final List<Expression> expressions;
-  /**
-   * Cache the hash code for the expression
-   */
+  /** Cached hash code for the expression. */
   private int hash;
 
   public NewArrayExpression(Type type, int dimension, Expression bound,
@@ -51,7 +49,7 @@ public class NewArrayExpression extends Expression {
     return shuttle.visit(this, dimension, bound, expressions);
   }
 
-  public <R> R accept(Visitor<R> visitor) {
+  @Override public <R> R accept(Visitor<R> visitor) {
     return visitor.visit(this);
   }
 
@@ -108,5 +106,3 @@ public class NewArrayExpression extends Expression {
     return result;
   }
 }
-
-// End NewArrayExpression.java

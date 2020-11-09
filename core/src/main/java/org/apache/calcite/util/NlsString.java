@@ -19,7 +19,9 @@ package org.apache.calcite.util;
 import org.apache.calcite.avatica.util.ByteString;
 import org.apache.calcite.runtime.SqlFunctions;
 import org.apache.calcite.sql.SqlCollation;
+import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.SqlUtil;
+import org.apache.calcite.sql.dialect.AnsiSqlDialect;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -51,7 +53,7 @@ public class NlsString implements Comparable<NlsString>, Cloneable {
           .softValues()
           .build(
               new CacheLoader<Pair<ByteString, Charset>, String>() {
-                public String load(@Nonnull Pair<ByteString, Charset> key) {
+                @Override public String load(@Nonnull Pair<ByteString, Charset> key) {
                   final Charset charset = key.right;
                   final CharsetDecoder decoder = charset.newDecoder();
                   final byte[] bytes = key.left.getBytes();
@@ -147,7 +149,7 @@ public class NlsString implements Comparable<NlsString>, Cloneable {
 
   //~ Methods ----------------------------------------------------------------
 
-  public Object clone() {
+  @Override public Object clone() {
     try {
       return super.clone();
     } catch (CloneNotSupportedException e) {
@@ -155,11 +157,11 @@ public class NlsString implements Comparable<NlsString>, Cloneable {
     }
   }
 
-  public int hashCode() {
+  @Override public int hashCode() {
     return Objects.hash(stringValue, bytesValue, charsetName, collation);
   }
 
-  public boolean equals(Object obj) {
+  @Override public boolean equals(Object obj) {
     return this == obj
         || obj instanceof NlsString
         && Objects.equals(stringValue, ((NlsString) obj).stringValue)
@@ -169,8 +171,9 @@ public class NlsString implements Comparable<NlsString>, Cloneable {
   }
 
   @Override public int compareTo(NlsString other) {
-    // TODO jvs 18-Jan-2006:  Actual collation support.  This just uses
-    // the default collation.
+    if (collation != null && collation.getCollator() != null) {
+      return collation.getCollator().compare(getValue(), other.getValue());
+    }
     return getValue().compareTo(other.getValue());
   }
 
@@ -206,25 +209,27 @@ public class NlsString implements Comparable<NlsString>, Cloneable {
     return this;
   }
 
+  /** As {@link #asSql(boolean, boolean, SqlDialect)} but with SQL standard
+   * dialect. */
+  public String asSql(boolean prefix, boolean suffix) {
+    return asSql(prefix, suffix, AnsiSqlDialect.DEFAULT);
+  }
+
   /**
    * Returns the string quoted for SQL, for example <code>_ISO-8859-1'is it a
    * plane? no it''s superman!'</code>.
    *
    * @param prefix if true, prefix the character set name
    * @param suffix if true, suffix the collation clause
+   * @param dialect Dialect
    * @return the quoted string
    */
   public String asSql(
       boolean prefix,
-      boolean suffix) {
+      boolean suffix,
+      SqlDialect dialect) {
     StringBuilder ret = new StringBuilder();
-    if (prefix && (null != charsetName)) {
-      ret.append("_");
-      ret.append(charsetName);
-    }
-    ret.append("'");
-    ret.append(Util.replace(getValue(), "'", "''"));
-    ret.append("'");
+    dialect.quoteStringLiteral(ret, prefix ? charsetName : null, getValue());
 
     // NOTE jvs 3-Feb-2005:  see FRG-78 for why this should go away
     if (false) {
@@ -240,7 +245,7 @@ public class NlsString implements Comparable<NlsString>, Cloneable {
    * Returns the string quoted for SQL, for example <code>_ISO-8859-1'is it a
    * plane? no it''s superman!'</code>.
    */
-  public String toString() {
+  @Override public String toString() {
     return asSql(true, true);
   }
 
@@ -295,5 +300,3 @@ public class NlsString implements Comparable<NlsString>, Cloneable {
     return bytesValue;
   }
 }
-
-// End NlsString.java

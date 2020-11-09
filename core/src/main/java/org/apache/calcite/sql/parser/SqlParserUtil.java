@@ -22,6 +22,7 @@ import org.apache.calcite.config.CalciteSystemProperty;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.sql.SqlBinaryOperator;
+import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlDateLiteral;
 import org.apache.calcite.sql.SqlIntervalLiteral;
 import org.apache.calcite.sql.SqlIntervalQualifier;
@@ -46,6 +47,7 @@ import org.apache.calcite.util.Util;
 import org.apache.calcite.util.trace.CalciteTrace;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 
 import org.slf4j.Logger;
 
@@ -79,10 +81,8 @@ public final class SqlParserUtil {
 
   //~ Methods ----------------------------------------------------------------
 
-  /**
-   * @return the character-set prefix of an sql string literal; returns null
-   * if there is none
-   */
+  /** Returns the character-set prefix of a SQL string literal; returns null if
+   * there is none. */
   public static String getCharacterSet(String s) {
     if (s.charAt(0) == '\'') {
       return null;
@@ -115,25 +115,22 @@ public final class SqlParserUtil {
     return new BigDecimal(s);
   }
 
-  /**
-   * @deprecated this method is not localized for Farrago standards
-   */
+  // CHECKSTYLE: IGNORE 1
+  /** @deprecated this method is not localized for Farrago standards */
   @Deprecated // to be removed before 2.0
   public static java.sql.Date parseDate(String s) {
     return java.sql.Date.valueOf(s);
   }
 
-  /**
-   * @deprecated Does not parse SQL:99 milliseconds
-   */
+  // CHECKSTYLE: IGNORE 1
+  /** @deprecated Does not parse SQL:99 milliseconds */
   @Deprecated // to be removed before 2.0
   public static java.sql.Time parseTime(String s) {
     return java.sql.Time.valueOf(s);
   }
 
-  /**
-   * @deprecated this method is not localized for Farrago standards
-   */
+  // CHECKSTYLE: IGNORE 1
+  /** @deprecated this method is not localized for Farrago standards */
   @Deprecated // to be removed before 2.0
   public static java.sql.Timestamp parseTimestamp(String s) {
     return java.sql.Timestamp.valueOf(s);
@@ -171,9 +168,18 @@ public final class SqlParserUtil {
   public static SqlTimestampLiteral parseTimestampLiteral(String s,
       SqlParserPos pos) {
     final String dateStr = parseString(s);
-    final DateTimeUtils.PrecisionTime pt =
-        DateTimeUtils.parsePrecisionDateTimeLiteral(dateStr,
-            Format.PER_THREAD.get().timestamp, DateTimeUtils.UTC_ZONE, -1);
+    final Format format = Format.PER_THREAD.get();
+    DateTimeUtils.PrecisionTime pt = null;
+    // Allow timestamp literals with and without time fields (as does
+    // PostgreSQL); TODO: require time fields except in Babel's lenient mode
+    final DateFormat[] dateFormats = {format.timestamp, format.date};
+    for (DateFormat dateFormat : dateFormats) {
+      pt = DateTimeUtils.parsePrecisionDateTimeLiteral(dateStr,
+          dateFormat, DateTimeUtils.UTC_ZONE, -1);
+      if (pt != null) {
+        break;
+      }
+    }
     if (pt == null) {
       throw SqlUtil.newContextException(pos,
           RESOURCE.illegalLiteral("TIMESTAMP", s,
@@ -197,7 +203,7 @@ public final class SqlParserUtil {
   }
 
   /**
-   * Checks if the date/time format is valid
+   * Checks if the date/time format is valid, throws if not.
    *
    * @param pattern {@link SimpleDateFormat}  pattern
    */
@@ -306,12 +312,12 @@ public final class SqlParserUtil {
    */
   @Deprecated // to be removed before 2.0
   public static byte[] parseBinaryString(String s) {
-    s = s.replaceAll(" ", "");
-    s = s.replaceAll("\n", "");
-    s = s.replaceAll("\t", "");
-    s = s.replaceAll("\r", "");
-    s = s.replaceAll("\f", "");
-    s = s.replaceAll("'", "");
+    s = s.replace(" ", "");
+    s = s.replace("\n", "");
+    s = s.replace("\t", "");
+    s = s.replace("\r", "");
+    s = s.replace("\f", "");
+    s = s.replace("'", "");
 
     if (s.length() == 0) {
       return new byte[0];
@@ -388,53 +394,9 @@ public final class SqlParserUtil {
     return s.substring(start, stop);
   }
 
-  /**
-   * Looks for one or two carets in a SQL string, and if present, converts
-   * them into a parser position.
-   *
-   * <p>Examples:
-   *
-   * <ul>
-   * <li>findPos("xxx^yyy") yields {"xxxyyy", position 3, line 1 column 4}
-   * <li>findPos("xxxyyy") yields {"xxxyyy", null}
-   * <li>findPos("xxx^yy^y") yields {"xxxyyy", position 3, line 4 column 4
-   * through line 1 column 6}
-   * </ul>
-   */
+  @Deprecated // to be removed before 2.0
   public static StringAndPos findPos(String sql) {
-    int firstCaret = sql.indexOf('^');
-    if (firstCaret < 0) {
-      return new StringAndPos(sql, -1, null);
-    }
-    int secondCaret = sql.indexOf('^', firstCaret + 1);
-    if (secondCaret < 0) {
-      String sqlSansCaret =
-          sql.substring(0, firstCaret)
-              + sql.substring(firstCaret + 1);
-      int[] start = indexToLineCol(sql, firstCaret);
-      SqlParserPos pos = new SqlParserPos(start[0], start[1]);
-      return new StringAndPos(sqlSansCaret, firstCaret, pos);
-    } else {
-      String sqlSansCaret =
-          sql.substring(0, firstCaret)
-              + sql.substring(firstCaret + 1, secondCaret)
-              + sql.substring(secondCaret + 1);
-      int[] start = indexToLineCol(sql, firstCaret);
-
-      // subtract 1 because the col position needs to be inclusive
-      --secondCaret;
-      int[] end = indexToLineCol(sql, secondCaret);
-
-      // if second caret is on same line as first, decrement its column,
-      // because first caret pushed the string out
-      if (start[0] == end[0]) {
-        --end[1];
-      }
-
-      SqlParserPos pos =
-          new SqlParserPos(start[0], start[1], end[0], end[1]);
-      return new StringAndPos(sqlSansCaret, firstCaret, pos);
-    }
+    return StringAndPos.of(sql);
   }
 
   /**
@@ -505,7 +467,9 @@ public final class SqlParserUtil {
         + sql.substring(cut);
     if ((col != endCol) || (line != endLine)) {
       cut = lineColToIndex(sqlWithCarets, endLine, endCol);
-      ++cut; // for caret
+      if (line == endLine) {
+        ++cut; // for caret
+      }
       if (cut < sqlWithCarets.length()) {
         sqlWithCarets =
             sqlWithCarets.substring(0, cut)
@@ -554,7 +518,7 @@ public final class SqlParserUtil {
           CalciteSystemProperty.DEFAULT_COLLATION_STRENGTH.value();
     }
 
-    Charset charset = Charset.forName(charsetStr);
+    Charset charset = SqlUtil.getCharset(charsetStr);
     String[] localeParts = localeStr.split("_");
     Locale locale;
     if (1 == localeParts.length) {
@@ -580,6 +544,20 @@ public final class SqlParserUtil {
 
   public static SqlNode[] toNodeArray(SqlNodeList list) {
     return list.toArray();
+  }
+
+  /** Converts "ROW (1, 2)" to "(1, 2)"
+   * and "3" to "(3)". */
+  public static SqlNodeList stripRow(SqlNode n) {
+    final List<SqlNode> list;
+    switch (n.getKind()) {
+    case ROW:
+      list = ((SqlCall) n).getOperandList();
+      break;
+    default:
+      list = ImmutableList.of(n);
+    }
+    return new SqlNodeList(list, n.getParserPosition());
   }
 
   @Deprecated // to be removed before 2.0
@@ -723,6 +701,30 @@ public final class SqlParserUtil {
     return c;
   }
 
+  /**
+   * Returns whether the reported ParseException tokenImage
+   * allows SQL identifier.
+   *
+   * @param tokenImage The allowed tokens from the ParseException
+   * @param expectedTokenSequences Expected token sequences
+   *
+   * @return true if SQL identifier is allowed
+   */
+  public static boolean allowsIdentifier(String[] tokenImage, int[][] expectedTokenSequences) {
+    // Compares from tailing tokens first because the <IDENTIFIER>
+    // was very probably at the tail.
+    for (int i = expectedTokenSequences.length - 1; i >= 0; i--) {
+      int[] expectedTokenSequence = expectedTokenSequences[i];
+      for (int j = expectedTokenSequence.length - 1; j >= 0; j--) {
+        if (tokenImage[expectedTokenSequence[j]].equals("<IDENTIFIER>")) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   //~ Inner Classes ----------------------------------------------------------
 
   /** The components of a collation definition, per the SQL standard. */
@@ -769,7 +771,7 @@ public final class SqlParserUtil {
       this.pos = pos;
     }
 
-    public String toString() {
+    @Override public String toString() {
       return op.toString();
     }
 
@@ -779,22 +781,6 @@ public final class SqlParserUtil {
 
     public SqlParserPos getPos() {
       return pos;
-    }
-  }
-
-  /**
-   * Contains a string, the offset of a token within the string, and a parser
-   * position containing the beginning and end line number.
-   */
-  public static class StringAndPos {
-    public final String sql;
-    public final int cursor;
-    public final SqlParserPos pos;
-
-    StringAndPos(String sql, int cursor, SqlParserPos pos) {
-      this.sql = sql;
-      this.cursor = cursor;
-      this.pos = pos;
     }
   }
 
@@ -811,16 +797,16 @@ public final class SqlParserUtil {
       this.list = parser.all();
     }
 
-    public PrecedenceClimbingParser parser(int start,
+    @Override public PrecedenceClimbingParser parser(int start,
         Predicate<PrecedenceClimbingParser.Token> predicate) {
       return parser.copy(start, predicate);
     }
 
-    public int size() {
+    @Override public int size() {
       return list.size();
     }
 
-    public SqlOperator op(int i) {
+    @Override public SqlOperator op(int i) {
       return ((ToTreeListItem) list.get(i).o).getOperator();
     }
 
@@ -841,19 +827,19 @@ public final class SqlParserUtil {
       }
     }
 
-    public SqlParserPos pos(int i) {
+    @Override public SqlParserPos pos(int i) {
       return pos(list.get(i));
     }
 
-    public boolean isOp(int i) {
+    @Override public boolean isOp(int i) {
       return list.get(i).o instanceof ToTreeListItem;
     }
 
-    public SqlNode node(int i) {
+    @Override public SqlNode node(int i) {
       return convert(list.get(i));
     }
 
-    public void replaceSublist(int start, int end, SqlNode e) {
+    @Override public void replaceSublist(int start, int end, SqlNode e) {
       SqlParserUtil.replaceSublist(list, start, end, parser.atom(e));
     }
   }
@@ -908,30 +894,30 @@ public final class SqlParserUtil {
       return builder.build();
     }
 
-    public int size() {
+    @Override public int size() {
       return list.size();
     }
 
-    public SqlOperator op(int i) {
+    @Override public SqlOperator op(int i) {
       return ((ToTreeListItem) list.get(i)).op;
     }
 
-    public SqlParserPos pos(int i) {
+    @Override public SqlParserPos pos(int i) {
       final Object o = list.get(i);
       return o instanceof ToTreeListItem
           ? ((ToTreeListItem) o).pos
           : ((SqlNode) o).getParserPosition();
     }
 
-    public boolean isOp(int i) {
+    @Override public boolean isOp(int i) {
       return list.get(i) instanceof ToTreeListItem;
     }
 
-    public SqlNode node(int i) {
+    @Override public SqlNode node(int i) {
       return (SqlNode) list.get(i);
     }
 
-    public void replaceSublist(int start, int end, SqlNode e) {
+    @Override public void replaceSublist(int start, int end, SqlNode e) {
       SqlParserUtil.replaceSublist(list, start, end, e);
     }
   }
@@ -950,5 +936,3 @@ public final class SqlParserUtil {
         new SimpleDateFormat(DateTimeUtils.DATE_FORMAT_STRING, Locale.ROOT);
   }
 }
-
-// End SqlParserUtil.java

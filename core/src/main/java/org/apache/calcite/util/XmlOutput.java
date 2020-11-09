@@ -49,15 +49,14 @@ public class XmlOutput {
   // is used to monitor changes to the output
   private int tagsWritten;
 
-  // This flag is set to true if the output should be compacted.
-  // Compacted output is free of extraneous whitespace and is designed
-  // for easier transport.
+  /** Whehter output should be compacted.  Compacted output is free of
+   * extraneous whitespace and is designed for easier transport. */
   private boolean compact;
 
-  /** @see #setIndentString */
+  /** String to write for each indent level; see {@link #setIndentString}. */
   private String indentString = "\t";
 
-  /** @see #setGlob */
+  /** Whether to detect that tags are empty; see {@link #setGlob}. */
   private boolean glob;
 
   /**
@@ -68,14 +67,17 @@ public class XmlOutput {
    */
   private boolean inTag;
 
-  /** @see #setAlwaysQuoteCData */
+  /** Whether to always quote CDATA segments (even if they don't contain
+   * special characters); see {@link #setAlwaysQuoteCData}. */
   private boolean alwaysQuoteCData;
 
-  /** @see #setIgnorePcdata */
+  /** Whether to ignore unquoted text, such as whitespace; see
+   * {@link #setIgnorePcdata}. */
   private boolean ignorePcdata;
 
   /**
-   * Private helper function to display a degree of indentation
+   * Private helper function to display a degree of indentation.
+   *
    * @param out the PrintWriter to which to display output.
    * @param indent the degree of indentation.
    */
@@ -354,6 +356,7 @@ public class XmlOutput {
       data = "";
     }
     boolean specials = false;
+    @SuppressWarnings("unused")
     boolean cdataEnd = false;
 
     // Scan the string for special characters
@@ -361,6 +364,7 @@ public class XmlOutput {
     if (stringHasXMLSpecials(data)) {
       specials = true;
       if (data.contains("]]>")) {
+        // TODO: support string that contains cdataEnd literal values
         cdataEnd = true;
       }
     }
@@ -372,11 +376,11 @@ public class XmlOutput {
       out.print(data);
       out.println("]]>");
     } else if (!specials) {
-      out.print(data);
+      out.println(data);
     } else {
       stringEncodeXML(data, out);
+      out.println();
     }
-
     out.flush();
     tagsWritten++;
   }
@@ -443,14 +447,15 @@ public class XmlOutput {
   }
 
   /**
-   * Get the total number of tags written
+   * Returns the total number of tags written.
+   *
    * @return the total number of tags written to the XML stream.
    */
   public int numTagsWritten() {
     return tagsWritten;
   }
 
-  /** Print an XML attribute name and value for string val */
+  /** Prints an XML attribute name and value for string {@code val}. */
   private static void printAtt(PrintWriter pw, String name, String val) {
     if (val != null /* && !val.equals("") */) {
       pw.print(" ");
@@ -518,6 +523,8 @@ public class XmlOutput {
       case '\n':
       case '\r':
         return true;
+      default:
+        break;
       }
     }
     return false;
@@ -543,15 +550,13 @@ public class XmlOutput {
     public static final StringEscaper URL_ARG_ESCAPER;
     public static final StringEscaper URL_ESCAPER;
 
-    /**
-     * Identity transform
-     */
+    /** Identity transform. */
     StringEscaper() {
       translationVector = new ArrayList<>();
     }
 
     /**
-     * Map character "from" to escape sequence "to"
+     * Map character "from" to escape sequence "to".
      */
     public void defineEscape(char from, String to) {
       int i = (int) from;
@@ -610,7 +615,7 @@ public class XmlOutput {
       }
     }
 
-    protected StringEscaper clone() {
+    @Override protected StringEscaper clone() {
       StringEscaper clone = new StringEscaper();
       if (translationVector != null) {
         clone.translationVector = new ArrayList<>(translationVector);
@@ -676,6 +681,3 @@ public class XmlOutput {
     }
   }
 }
-
-
-// End XmlOutput.java

@@ -23,7 +23,7 @@ import org.apache.calcite.sql.validate.SqlMoniker;
  * {@link SqlAdvisor#getCompletionHints (String, int, String[])}.
  */
 public class SqlAdvisorHint2 extends SqlAdvisorHint {
-  /** Replacement string */
+  /** Replacement string. */
   public final String replacement;
 
   public SqlAdvisorHint2(String id, String[] names, String type, String replacement) {
@@ -36,5 +36,3 @@ public class SqlAdvisorHint2 extends SqlAdvisorHint {
     this.replacement = replacement;
   }
 }
-
-// End SqlAdvisorHint2.java

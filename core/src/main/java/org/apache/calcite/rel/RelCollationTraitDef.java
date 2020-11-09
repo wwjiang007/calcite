@@ -43,11 +43,11 @@ public class RelCollationTraitDef extends RelTraitDef<RelCollation> {
   private RelCollationTraitDef() {
   }
 
-  public Class<RelCollation> getTraitClass() {
+  @Override public Class<RelCollation> getTraitClass() {
     return RelCollation.class;
   }
 
-  public String getSimpleName() {
+  @Override public String getSimpleName() {
     return "sort";
   }
 
@@ -55,11 +55,11 @@ public class RelCollationTraitDef extends RelTraitDef<RelCollation> {
     return true;
   }
 
-  public RelCollation getDefault() {
+  @Override public RelCollation getDefault() {
     return RelCollations.EMPTY;
   }
 
-  public RelNode convert(
+  @Override public RelNode convert(
       RelOptPlanner planner,
       RelNode rel,
       RelCollation toCollation,
@@ -81,23 +81,8 @@ public class RelCollationTraitDef extends RelTraitDef<RelCollation> {
     return newRel;
   }
 
-  public boolean canConvert(
-       RelOptPlanner planner, RelCollation fromTrait, RelCollation toTrait) {
-    return false;
-  }
-
-  @Override public boolean canConvert(RelOptPlanner planner,
-      RelCollation fromTrait, RelCollation toTrait, RelNode fromRel) {
-    // Returns true only if we can convert.  In this case, we can only convert
-    // if the fromTrait (the input) has fields that the toTrait wants to sort.
-    for (RelFieldCollation field : toTrait.getFieldCollations()) {
-      int index = field.getFieldIndex();
-      if (index >= fromRel.getRowType().getFieldCount()) {
-        return false;
-      }
-    }
+  @Override public boolean canConvert(
+      RelOptPlanner planner, RelCollation fromTrait, RelCollation toTrait) {
     return true;
   }
 }
-
-// End RelCollationTraitDef.java

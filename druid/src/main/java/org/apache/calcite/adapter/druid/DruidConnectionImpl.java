@@ -29,8 +29,6 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.Holder;
 import org.apache.calcite.util.Util;
 
-import static org.apache.calcite.runtime.HttpUtils.post;
-
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
@@ -52,16 +50,18 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TimeZone;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.apache.calcite.runtime.HttpUtils.post;
+import static org.apache.calcite.util.DateTimeStringUtils.ISO_DATETIME_FRACTIONAL_SECOND_FORMAT;
+import static org.apache.calcite.util.DateTimeStringUtils.getDateFormatter;
 
 /**
  * Implementation of {@link DruidConnection}.
@@ -75,12 +75,9 @@ class DruidConnectionImpl implements DruidConnection {
   private static final SimpleDateFormat TIMESTAMP_FORMAT;
 
   static {
-    final TimeZone utc = DateTimeUtils.UTC_ZONE;
     UTC_TIMESTAMP_FORMAT =
-        new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT);
-    UTC_TIMESTAMP_FORMAT.setTimeZone(utc);
-    TIMESTAMP_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ROOT);
-    TIMESTAMP_FORMAT.setTimeZone(utc);
+        getDateFormatter(ISO_DATETIME_FRACTIONAL_SECOND_FORMAT);
+    TIMESTAMP_FORMAT = getDateFormatter(DateTimeUtils.TIMESTAMP_FORMAT_STRING);
   }
 
   DruidConnectionImpl(String url, String coordinatorUrl) {
@@ -288,6 +285,9 @@ class DruidConnectionImpl implements DruidConnection {
             expect(parser, JsonToken.END_OBJECT);
           }
         }
+        break;
+      default:
+        break;
       }
     } catch (IOException | InterruptedException e) {
       throw new RuntimeException(e);
@@ -312,6 +312,7 @@ class DruidConnectionImpl implements DruidConnection {
     parseFieldForName(fieldNames, fieldTypes, posTimestampField, rowBuilder, parser, fieldName);
   }
 
+  @SuppressWarnings("JdkObsolete")
   private void parseFieldForName(List<String> fieldNames, List<ColumnMetaData.Rep> fieldTypes,
       int posTimestampField, Row.RowBuilder rowBuilder, JsonParser parser, String fieldName)
       throws IOException {
@@ -389,6 +390,8 @@ class DruidConnectionImpl implements DruidConnection {
       case DOUBLE:
         rowBuilder.set(i, parser.getDoubleValue());
         break;
+      default:
+        break;
       }
       break;
     case VALUE_TRUE:
@@ -415,6 +418,8 @@ class DruidConnectionImpl implements DruidConnection {
           case "-Infinity":
           case "NaN":
             throw new RuntimeException("/ by zero");
+          default:
+            break;
           }
           rowBuilder.set(i, Long.valueOf(s));
           break;
@@ -433,8 +438,12 @@ class DruidConnectionImpl implements DruidConnection {
           case "NaN":
             rowBuilder.set(i, Double.NaN);
             return;
+          default:
+            break;
           }
           rowBuilder.set(i, Double.valueOf(s));
+          break;
+        default:
           break;
         }
       } else {
@@ -474,6 +483,7 @@ class DruidConnectionImpl implements DruidConnection {
     }
   }
 
+  @SuppressWarnings("unused")
   private void expectObjectField(JsonParser parser, String name)
       throws IOException {
     expect(parser, JsonToken.FIELD_NAME);
@@ -487,6 +497,7 @@ class DruidConnectionImpl implements DruidConnection {
     }
   }
 
+  @SuppressWarnings("JdkObsolete")
   private Long extractTimestampField(JsonParser parser)
       throws IOException {
     expect(parser, JsonToken.FIELD_NAME);
@@ -516,20 +527,20 @@ class DruidConnectionImpl implements DruidConnection {
       final ExecutorService service)
       throws IOException {
     return new AbstractEnumerable<Row>() {
-      public Enumerator<Row> enumerator() {
+      @Override public Enumerator<Row> enumerator() {
         final BlockingQueueEnumerator<Row> enumerator =
             new BlockingQueueEnumerator<>();
         final RunnableQueueSink sink = new RunnableQueueSink() {
-          public void send(Row row) throws InterruptedException {
+          @Override public void send(Row row) throws InterruptedException {
             enumerator.queue.put(row);
           }
 
-          public void end() {
+          @Override public void end() {
             enumerator.done.set(true);
           }
 
           @SuppressWarnings("deprecation")
-          public void setSourceEnumerable(Enumerable<Row> enumerable)
+          @Override public void setSourceEnumerable(Enumerable<Row> enumerable)
               throws InterruptedException {
             for (Row row : enumerable) {
               send(row);
@@ -537,7 +548,7 @@ class DruidConnectionImpl implements DruidConnection {
             end();
           }
 
-          public void run() {
+          @Override public void run() {
             try {
               final Page page = new Page();
               final List<ColumnMetaData.Rep> fieldTypes =
@@ -670,14 +681,14 @@ class DruidConnectionImpl implements DruidConnection {
 
     E next;
 
-    public E current() {
+    @Override public E current() {
       if (next == null) {
         throw new NoSuchElementException();
       }
       return next;
     }
 
-    public boolean moveNext() {
+    @Override public boolean moveNext() {
       for (;;) {
         next = queue.poll();
         if (next != null) {
@@ -690,14 +701,13 @@ class DruidConnectionImpl implements DruidConnection {
       }
     }
 
-    public void reset() {}
+    @Override public void reset() {}
 
-    public void close() {
+    @Override public void close() {
       final Throwable e = throwableHolder.get();
       if (e != null) {
         throwableHolder.set(null);
-        Util.throwIfUnchecked(e);
-        throw new RuntimeException(e);
+        throw Util.throwAsRuntime(e);
       }
     }
   }
@@ -748,5 +758,3 @@ class DruidConnectionImpl implements DruidConnection {
     }
   }
 }
-
-// End DruidConnectionImpl.java

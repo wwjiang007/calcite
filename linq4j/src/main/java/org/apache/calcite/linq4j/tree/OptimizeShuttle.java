@@ -149,6 +149,9 @@ public class OptimizeShuttle extends Shuttle {
           return expr;
         }
       }
+      break;
+    default:
+      break;
     }
     return super.visit(ternary, expression0, expression1, expression2);
   }
@@ -165,6 +168,9 @@ public class OptimizeShuttle extends Shuttle {
       if (eq(expression0, expression1)) {
         return expression0;
       }
+      break;
+    default:
+      break;
     }
     switch (binary.getNodeType()) {
     case Equal:
@@ -211,6 +217,9 @@ public class OptimizeShuttle extends Shuttle {
       if (result != null) {
         return result;
       }
+      break;
+    default:
+      break;
     }
     return super.visit(binary, expression0, expression1);
   }
@@ -263,6 +272,8 @@ public class OptimizeShuttle extends Shuttle {
         return always ? Expressions.not(expression1) : expression1;
       }
       break;
+    default:
+      break;
     }
     return null;
   }
@@ -297,6 +308,9 @@ public class OptimizeShuttle extends Shuttle {
           return Expressions.makeBinary(comp, bin.expression0, bin.expression1);
         }
       }
+      break;
+    default:
+      break;
     }
     return super.visit(unaryExpression, expression);
   }
@@ -406,9 +420,8 @@ public class OptimizeShuttle extends Shuttle {
                 ((MethodCallExpression) expression).method));
   }
 
-  /**
-   * Treats two expressions equal even if they represent different null types
-   */
+  /** Compares two expressions for equality, treating them as equal even if they
+   * represent different null types. */
   private static boolean eq(Expression a, Expression b) {
     return a.equals(b)
         || (a instanceof ConstantExpression
@@ -417,5 +430,3 @@ public class OptimizeShuttle extends Shuttle {
                 == ((ConstantExpression) b).value);
   }
 }
-
-// End OptimizeShuttle.java

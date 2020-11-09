@@ -17,9 +17,9 @@
 package org.apache.calcite.rel.rules;
 
 import org.apache.calcite.linq4j.Ord;
-import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.plan.RelRule;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.AggregateCall;
@@ -40,6 +40,7 @@ import org.apache.calcite.sql.SqlSplittableAggFunction;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.tools.RelBuilderFactory;
 import org.apache.calcite.util.Bug;
+import org.apache.calcite.util.ImmutableBeans;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.Util;
 import org.apache.calcite.util.mapping.Mapping;
@@ -52,36 +53,35 @@ import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Objects;
-import java.util.SortedMap;
 import java.util.TreeMap;
 
 /**
  * Planner rule that pushes an
  * {@link org.apache.calcite.rel.core.Aggregate}
  * past a {@link org.apache.calcite.rel.core.Join}.
+ *
+ * @see CoreRules#AGGREGATE_JOIN_TRANSPOSE
+ * @see CoreRules#AGGREGATE_JOIN_TRANSPOSE_EXTENDED
  */
-public class AggregateJoinTransposeRule extends RelOptRule {
-  public static final AggregateJoinTransposeRule INSTANCE =
-      new AggregateJoinTransposeRule(LogicalAggregate.class, LogicalJoin.class,
-          RelFactories.LOGICAL_BUILDER, false);
-
-  /** Extended instance of the rule that can push down aggregate functions. */
-  public static final AggregateJoinTransposeRule EXTENDED =
-      new AggregateJoinTransposeRule(LogicalAggregate.class, LogicalJoin.class,
-          RelFactories.LOGICAL_BUILDER, true);
-
-  private final boolean allowFunctions;
+public class AggregateJoinTransposeRule
+    extends RelRule<AggregateJoinTransposeRule.Config>
+    implements TransformationRule {
 
   /** Creates an AggregateJoinTransposeRule. */
+  protected AggregateJoinTransposeRule(Config config) {
+    super(config);
+  }
+
+  @Deprecated // to be removed before 2.0
   public AggregateJoinTransposeRule(Class<? extends Aggregate> aggregateClass,
       Class<? extends Join> joinClass, RelBuilderFactory relBuilderFactory,
       boolean allowFunctions) {
-    super(
-        operandJ(aggregateClass, null, agg -> isAggregateSupported(agg, allowFunctions),
-            operand(joinClass, null, any())),
-        relBuilderFactory, null);
-    this.allowFunctions = allowFunctions;
+    this(Config.DEFAULT
+        .withRelBuilderFactory(relBuilderFactory)
+        .as(Config.class)
+        .withOperandFor(aggregateClass, joinClass, allowFunctions));
   }
 
   @Deprecated // to be removed before 2.0
@@ -125,7 +125,8 @@ public class AggregateJoinTransposeRule extends RelOptRule {
         allowFunctions);
   }
 
-  private static boolean isAggregateSupported(Aggregate aggregate, boolean allowFunctions) {
+  private static boolean isAggregateSupported(Aggregate aggregate,
+      boolean allowFunctions) {
     if (!allowFunctions && !aggregate.getAggCallList().isEmpty()) {
       return false;
     }
@@ -153,7 +154,7 @@ public class AggregateJoinTransposeRule extends RelOptRule {
     return join.getJoinType() == JoinRelType.INNER || aggregate.getAggCallList().isEmpty();
   }
 
-  public void onMatch(RelOptRuleCall call) {
+  @Override public void onMatch(RelOptRuleCall call) {
     final Aggregate aggregate = call.rel(0);
     final Join join = call.rel(1);
     final RexBuilder rexBuilder = aggregate.getCluster().getRexBuilder();
@@ -214,7 +215,7 @@ public class AggregateJoinTransposeRule extends RelOptRule {
       final ImmutableBitSet belowAggregateKey =
           belowAggregateKeyNotShifted.shift(-offset);
       final boolean unique;
-      if (!allowFunctions) {
+      if (!config.isAllowFunctions()) {
         assert aggregate.getAggCallList().isEmpty();
         // If there are no functions, it doesn't matter as much whether we
         // aggregate the inputs before the join, because there will not be
@@ -326,8 +327,7 @@ public class AggregateJoinTransposeRule extends RelOptRule {
 
     // Aggregate above to sum up the sub-totals
     final List<AggregateCall> newAggCalls = new ArrayList<>();
-    final int groupIndicatorCount =
-        aggregate.getGroupCount() + aggregate.getIndicatorCount();
+    final int groupCount = aggregate.getGroupCount();
     final int newLeftWidth = sides.get(0).newInput.getRowType().getFieldCount();
     final List<RexNode> projects =
         new ArrayList<>(
@@ -341,7 +341,7 @@ public class AggregateJoinTransposeRule extends RelOptRule {
       final Integer rightSubTotal = sides.get(1).split.get(aggCall.i);
       newAggCalls.add(
           splitter.topSplit(rexBuilder, registry(projects),
-              groupIndicatorCount, relBuilder.peek().getRowType(), aggCall.e,
+              groupCount, relBuilder.peek().getRowType(), aggCall.e,
               leftSubTotal == null ? -1 : leftSubTotal,
               rightSubTotal == null ? -1 : rightSubTotal + newLeftWidth));
     }
@@ -375,7 +375,8 @@ public class AggregateJoinTransposeRule extends RelOptRule {
     if (!aggConvertedToProjects) {
       relBuilder.aggregate(
           relBuilder.groupKey(Mappings.apply(mapping, aggregate.getGroupSet()),
-              Mappings.apply2(mapping, aggregate.getGroupSets())),
+              (Iterable<ImmutableBitSet>)
+                  Mappings.apply2(mapping, aggregate.getGroupSets())),
           newAggCalls);
     }
 
@@ -387,7 +388,7 @@ public class AggregateJoinTransposeRule extends RelOptRule {
    * set, and vice versa. */
   private static ImmutableBitSet keyColumns(ImmutableBitSet aggregateColumns,
       ImmutableList<RexNode> predicates) {
-    SortedMap<Integer, BitSet> equivalence = new TreeMap<>();
+    NavigableMap<Integer, BitSet> equivalence = new TreeMap<>();
     for (RexNode predicate : predicates) {
       populateEquivalences(equivalence, predicate);
     }
@@ -415,6 +416,9 @@ public class AggregateJoinTransposeRule extends RelOptRule {
           populateEquivalence(equivalence, ref1.getIndex(), ref0.getIndex());
         }
       }
+      break;
+    default:
+      break;
     }
   }
 
@@ -448,6 +452,39 @@ public class AggregateJoinTransposeRule extends RelOptRule {
     RelNode newInput;
     boolean aggregate;
   }
-}
 
-// End AggregateJoinTransposeRule.java
+  /** Rule configuration. */
+  public interface Config extends RelRule.Config {
+    Config DEFAULT = EMPTY.as(Config.class)
+        .withOperandFor(LogicalAggregate.class, LogicalJoin.class, false);
+
+    /** Extended instance that can push down aggregate functions. */
+    Config EXTENDED = EMPTY.as(Config.class)
+        .withOperandFor(LogicalAggregate.class, LogicalJoin.class, true);
+
+    @Override default AggregateJoinTransposeRule toRule() {
+      return new AggregateJoinTransposeRule(this);
+    }
+
+    /** Whether to push down aggregate functions, default false. */
+    @ImmutableBeans.Property
+    @ImmutableBeans.BooleanDefault(false)
+    boolean isAllowFunctions();
+
+    /** Sets {@link #isAllowFunctions()}. */
+    Config withAllowFunctions(boolean allowFunctions);
+
+    /** Defines an operand tree for the given classes, and also sets
+     * {@link #isAllowFunctions()}. */
+    default Config withOperandFor(Class<? extends Aggregate> aggregateClass,
+        Class<? extends Join> joinClass, boolean allowFunctions) {
+      return withAllowFunctions(allowFunctions)
+          .withOperandSupplier(b0 ->
+              b0.operand(aggregateClass)
+                  .predicate(agg -> isAggregateSupported(agg, allowFunctions))
+              .oneInput(b1 ->
+                  b1.operand(joinClass).anyInputs()))
+          .as(Config.class);
+    }
+  }
+}

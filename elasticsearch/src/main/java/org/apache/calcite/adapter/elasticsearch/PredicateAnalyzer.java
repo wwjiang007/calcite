@@ -36,14 +36,12 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 
-import java.util.ArrayList;
 import java.util.GregorianCalendar;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 import static org.apache.calcite.adapter.elasticsearch.QueryBuilders.boolQuery;
 import static org.apache.calcite.adapter.elasticsearch.QueryBuilders.existsQuery;
@@ -64,7 +62,7 @@ import static java.lang.String.format;
 class PredicateAnalyzer {
 
   /**
-   * Internal exception
+   * Internal exception.
    */
   @SuppressWarnings("serial")
   private static final class PredicateAnalyzerException extends RuntimeException {
@@ -79,8 +77,8 @@ class PredicateAnalyzer {
   }
 
   /**
-   * Thrown when {@link org.apache.calcite.rel.RelNode} expression can't be processed
-   * (or converted into ES query)
+   * Exception that is thrown when a {@link org.apache.calcite.rel.RelNode}
+   * expression cannot be processed (or converted into an Elasticsearch query).
    */
   static class ExpressionNotAnalyzableException extends Exception {
     ExpressionNotAnalyzableException(String message, Throwable cause) {
@@ -122,6 +120,7 @@ class PredicateAnalyzer {
   /**
    * Converts expressions of the form NOT(LIKE(...)) into NOT_LIKE(...)
    */
+  @SuppressWarnings("unused")
   private static class NotLikeConverter extends RexShuttle {
     final RexBuilder rexBuilder;
 
@@ -133,11 +132,8 @@ class PredicateAnalyzer {
       if (call.getOperator().getKind() == SqlKind.NOT) {
         RexNode child = call.getOperands().get(0);
         if (child.getKind() == SqlKind.LIKE) {
-          List<RexNode> operands = ((RexCall) child).getOperands()
-              .stream()
-              .map(rexNode -> rexNode.accept(NotLikeConverter.this))
-              .collect(Collectors.toList());
-          return rexBuilder.makeCall(SqlStdOperatorTable.NOT_LIKE, operands);
+          return rexBuilder.makeCall(SqlStdOperatorTable.NOT_LIKE,
+              visitList(((RexCall) child).getOperands()));
         }
       }
       return super.visitCall(call);
@@ -166,6 +162,7 @@ class PredicateAnalyzer {
       switch (syntax) {
       case BINARY:
         switch (call.getKind()) {
+        case CONTAINS:
         case AND:
         case OR:
         case LIKE:
@@ -183,6 +180,7 @@ class PredicateAnalyzer {
         switch (call.getKind()) {
         case CAST:
         case LIKE:
+        case ITEM:
         case OTHER_FUNCTION:
           return true;
         case CASE:
@@ -197,13 +195,16 @@ class PredicateAnalyzer {
         case IS_NOT_NULL:
         case IS_NULL:
           return true;
+        default:
+          return false;
         }
       case PREFIX: // NOT()
         switch (call.getKind()) {
         case NOT:
           return true;
+        default:
+          return false;
         }
-      // fall through
       case FUNCTION_ID:
       case FUNCTION_STAR:
       default:
@@ -232,6 +233,8 @@ class PredicateAnalyzer {
           return toCastExpression(call);
         case LIKE:
           return binary(call);
+        case CONTAINS:
+          return binary(call);
         default:
           // manually process ITEM($0, 'foo') which in our case will be named attribute
           if (call.getOperator().getName().equalsIgnoreCase("ITEM")) {
@@ -242,11 +245,7 @@ class PredicateAnalyzer {
         }
       case FUNCTION:
         if (call.getOperator().getName().equalsIgnoreCase("CONTAINS")) {
-          List<Expression> operands = new ArrayList<>();
-          for (RexNode node : call.getOperands()) {
-            final Expression nodeExpr = node.accept(this);
-            operands.add(nodeExpr);
-          }
+          List<Expression> operands = visitList(call.getOperands());
           String query = convertQueryString(operands.subList(0, operands.size() - 1),
               operands.get(operands.size() - 1));
           return QueryExpression.create(new NamedFieldExpression()).queryString(query);
@@ -264,6 +263,7 @@ class PredicateAnalyzer {
       Preconditions.checkArgument(query instanceof LiteralExpression,
           "Query string must be a string literal");
       String queryString = ((LiteralExpression) query).stringValue();
+      @SuppressWarnings("ModifiedButNotUsed")
       Map<String, String> fieldMap = new LinkedHashMap<>();
       for (Expression expr : fields) {
         if (expr instanceof NamedFieldExpression) {
@@ -348,6 +348,8 @@ class PredicateAnalyzer {
       }
 
       switch (call.getKind()) {
+      case CONTAINS:
+        return QueryExpression.create(pair.getKey()).contains(pair.getValue());
       case LIKE:
         throw new UnsupportedOperationException("LIKE not yet supported");
       case EQUALS:
@@ -524,7 +526,7 @@ class PredicateAnalyzer {
   }
 
   /**
-   * Empty interface; exists only to define type hierarchy
+   * Empty interface; exists only to define the type hierarchy.
    */
   interface Expression {
   }
@@ -539,6 +541,8 @@ class PredicateAnalyzer {
     public boolean isPartial() {
       return false;
     }
+
+    public abstract QueryExpression contains(LiteralExpression literal);
 
     /**
      * Negate {@code this} QueryExpression (not the next one).
@@ -582,7 +586,7 @@ class PredicateAnalyzer {
   }
 
   /**
-   * Builds conjunctions / disjunctions based on existing expressions
+   * Builds conjunctions / disjunctions based on existing expressions.
    */
   static class CompoundQueryExpression extends QueryExpression {
 
@@ -598,8 +602,9 @@ class PredicateAnalyzer {
     }
 
     /**
-     * if partial expression, we will need to complete it with a full filter
-     * @param partial whether we partially converted a and for push down purposes.
+     * If partial expression, we will need to complete it with a full filter.
+     *
+     * @param partial whether we partially converted a and for push down purposes
      * @param expressions list of expressions to join with {@code and} boolean
      * @return new instance of expression
      */
@@ -638,6 +643,11 @@ class PredicateAnalyzer {
     @Override public QueryExpression exists() {
       throw new PredicateAnalyzerException("SqlOperatorImpl ['exists'] "
           + "cannot be applied to a compound expression");
+    }
+
+    @Override public QueryExpression contains(LiteralExpression literal) {
+      throw new PredicateAnalyzerException("SqlOperatorImpl ['contains'] "
+              + "cannot be applied to a compound expression");
     }
 
     @Override public QueryExpression notExists() {
@@ -740,6 +750,11 @@ class PredicateAnalyzer {
       return this;
     }
 
+    @Override public QueryExpression contains(LiteralExpression literal) {
+      builder = QueryBuilders.matchQuery(getFieldReference(), literal.value());
+      return this;
+    }
+
     @Override public QueryExpression notLike(LiteralExpression literal) {
       builder = boolQuery()
               // NOT LIKE should return false when field is NULL
@@ -827,15 +842,16 @@ class PredicateAnalyzer {
   }
 
   /**
-   * Empty interface; exists only to define type hierarchy
+   * Empty interface; exists only to define the type hierarchy.
    */
   interface TerminalExpression extends Expression {
   }
 
   /**
-   * SQL cast: {@code cast(col as INTEGER)}
+   * SQL cast. For example, {@code cast(col as INTEGER)}.
    */
   static final class CastExpression implements TerminalExpression {
+    @SuppressWarnings("unused")
     private final RelDataType type;
     private final TerminalExpression argument;
 
@@ -862,7 +878,7 @@ class PredicateAnalyzer {
   }
 
   /**
-   * Used for bind variables
+   * Used for bind variables.
    */
   static final class NamedFieldExpression implements TerminalExpression {
 
@@ -958,8 +974,9 @@ class PredicateAnalyzer {
 
   /**
    * If one operand in a binary operator is a DateTime type, but the other isn't,
-   * we should not push down the predicate
-   * @param call current node being evaluated
+   * we should not push down the predicate.
+   *
+   * @param call Current node being evaluated
    */
   private static void checkForIncompatibleDateTimeOperands(RexCall call) {
     RelDataType op1 = call.getOperands().get(0).getType();
@@ -977,5 +994,3 @@ class PredicateAnalyzer {
     }
   }
 }
-
-// End PredicateAnalyzer.java

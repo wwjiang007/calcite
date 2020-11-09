@@ -65,7 +65,7 @@ public class JdbcToSparkConverter
     return super.computeSelfCost(planner, mq).multiplyBy(.1);
   }
 
-  public SparkRel.Result implementSpark(SparkRel.Implementor implementor) {
+  @Override public SparkRel.Result implementSpark(SparkRel.Implementor implementor) {
     // Generate:
     //   ResultSetEnumerable.of(schema.getDataSource(), "select ...")
     final BlockBuilder list = new BlockBuilder();
@@ -113,9 +113,7 @@ public class JdbcToSparkConverter
         new JdbcImplementor(dialect,
             (JavaTypeFactory) getCluster().getTypeFactory());
     final JdbcImplementor.Result result =
-        jdbcImplementor.visitChild(0, getInput());
+        jdbcImplementor.visitInput(this, 0);
     return result.asStatement().toSqlString(dialect).getSql();
   }
 }
-
-// End JdbcToSparkConverter.java

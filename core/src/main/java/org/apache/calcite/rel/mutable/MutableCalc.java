@@ -30,7 +30,7 @@ public class MutableCalc extends MutableSingleRel {
   }
 
   /**
-   * Creates a MutableCalc
+   * Creates a MutableCalc.
    *
    * @param input   Input relational expression
    * @param program Calc program
@@ -60,5 +60,3 @@ public class MutableCalc extends MutableSingleRel {
     return MutableCalc.of(input.clone(), program);
   }
 }
-
-// End MutableCalc.java

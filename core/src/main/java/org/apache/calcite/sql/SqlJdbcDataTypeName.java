@@ -29,7 +29,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
  *
  * @see SqlJdbcFunctionCall
  */
-public enum SqlJdbcDataTypeName {
+public enum SqlJdbcDataTypeName implements Symbolizable {
   SQL_CHAR(SqlTypeName.CHAR),
   SQL_VARCHAR(SqlTypeName.VARCHAR),
   SQL_DATE(SqlTypeName.DATE),
@@ -80,25 +80,14 @@ public enum SqlJdbcDataTypeName {
     this.range = range;
   }
 
-  /**
-   * Creates a parse-tree node representing an occurrence of this keyword
-   * at a particular position in the parsed text.
-   */
-  public SqlLiteral symbol(SqlParserPos pos) {
-    return SqlLiteral.createSymbol(this, pos);
-  }
-
   /** Creates a parse tree node for a type identifier of this name. */
   public SqlNode createDataType(SqlParserPos pos) {
     if (typeName != null) {
       assert range == null;
-      final SqlIdentifier id = new SqlIdentifier(typeName.name(), pos);
-      return new SqlDataTypeSpec(id, -1, -1, null, null, pos);
+      return new SqlDataTypeSpec(new SqlBasicTypeNameSpec(typeName, pos), pos);
     } else {
       assert range != null;
       return new SqlIntervalQualifier(range.startUnit, range.endUnit, pos);
     }
   }
 }
-
-// End SqlJdbcDataTypeName.java

@@ -46,7 +46,7 @@ public class ConditionalStatement extends Statement {
     return shuttle.visit(this, list);
   }
 
-  public <R> R accept(Visitor<R> visitor) {
+  @Override public <R> R accept(Visitor<R> visitor) {
     return visitor.visit(this);
   }
 
@@ -96,5 +96,3 @@ public class ConditionalStatement extends Statement {
     return Objects.hash(nodeType, type, expressionList);
   }
 }
-
-// End ConditionalStatement.java

@@ -30,7 +30,7 @@ import org.apache.geode.cache.client.ClientCache;
 import static org.apache.calcite.adapter.geode.util.GeodeUtils.convertToRowValues;
 
 /**
- * Geode Simple Scannable Table Abstraction
+ * Geode Simple Scannable Table abstraction.
  */
 public class GeodeSimpleScannableTable extends AbstractTable implements ScannableTable {
 
@@ -57,7 +57,7 @@ public class GeodeSimpleScannableTable extends AbstractTable implements Scannabl
 
   @Override public Enumerable<Object[]> scan(DataContext root) {
     return new AbstractEnumerable<Object[]>() {
-      public Enumerator<Object[]> enumerator() {
+      @Override public Enumerator<Object[]> enumerator() {
         return new GeodeSimpleEnumerator<Object[]>(clientCache, regionName) {
           @Override public Object[] convert(Object obj) {
             Object values = convertToRowValues(relDataType.getFieldList(), obj);
@@ -71,5 +71,3 @@ public class GeodeSimpleScannableTable extends AbstractTable implements Scannabl
     };
   }
 }
-
-// End GeodeSimpleScannableTable.java

@@ -90,6 +90,8 @@ public class JethroDataSqlDialect extends SqlDialect {
     case CASE:
     case CAST:
       return true;
+    default:
+      break;
     }
     final Set<JethroSupportedFunction> functions =
         info.supportedFunctions.get(operator.getName());
@@ -175,7 +177,7 @@ public class JethroDataSqlDialect extends SqlDialect {
   private static class JethroInfoCacheImpl implements JethroInfoCache {
     final Map<String, JethroInfo> map = new HashMap<>();
 
-    public JethroInfo get(final DatabaseMetaData metaData) {
+    @Override public JethroInfo get(final DatabaseMetaData metaData) {
       try {
         assert "JethroData".equals(metaData.getDatabaseProductName());
         String productVersion = metaData.getDatabaseProductVersion();
@@ -229,5 +231,3 @@ public class JethroDataSqlDialect extends SqlDialect {
     }
   }
 }
-
-// End JethroDataSqlDialect.java

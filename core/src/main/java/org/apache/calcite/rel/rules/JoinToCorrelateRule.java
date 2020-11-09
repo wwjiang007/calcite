@@ -18,26 +18,21 @@ package org.apache.calcite.rel.rules;
 
 import org.apache.calcite.plan.Contexts;
 import org.apache.calcite.plan.RelOptCluster;
-import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptRuleCall;
+import org.apache.calcite.plan.RelRule;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.RelFactories;
-import org.apache.calcite.rel.core.SemiJoin;
 import org.apache.calcite.rel.logical.LogicalCorrelate;
 import org.apache.calcite.rel.logical.LogicalJoin;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
-import org.apache.calcite.sql.SemiJoinType;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.tools.RelBuilderFactory;
 import org.apache.calcite.util.ImmutableBitSet;
-import org.apache.calcite.util.Util;
-
-import java.util.function.Function;
 
 /**
  * Rule that converts a {@link org.apache.calcite.rel.core.Join}
@@ -59,87 +54,42 @@ import java.util.function.Function;
  * dept.deptno</code></blockquote>
  *
  * <p>would require emitting a NULL emp row if a certain department contained no
- * employees, and Correlator cannot do that.</p>
+ * employees, and Correlator cannot do that.
+ *
+ * @see CoreRules#JOIN_TO_CORRELATE
  */
-public class JoinToCorrelateRule extends RelOptRule {
+public class JoinToCorrelateRule
+    extends RelRule<JoinToCorrelateRule.Config>
+    implements TransformationRule {
 
-  /**
-   * Function to extract the {@link org.apache.calcite.sql.SemiJoinType} parameter
-   * for the creation of the {@link org.apache.calcite.rel.logical.LogicalCorrelate}
-   */
-  private final Function<Join, SemiJoinType> semiJoinTypeExtractor;
+  /** Creates a JoinToCorrelateRule. */
+  protected JoinToCorrelateRule(Config config) {
+    super(config);
+  }
 
-  //~ Static fields/initializers ---------------------------------------------
-
-  /**
-   * Rule that converts a {@link org.apache.calcite.rel.logical.LogicalJoin}
-   * into a {@link org.apache.calcite.rel.logical.LogicalCorrelate}
-   */
-  public static final JoinToCorrelateRule JOIN =
-      new JoinToCorrelateRule(LogicalJoin.class, RelFactories.LOGICAL_BUILDER,
-              "JoinToCorrelateRule", join -> SemiJoinType.of(join.getJoinType()));
-
-  @Deprecated // to be removed (should use JOIN instead), kept for backwards compatibility
-  public static final JoinToCorrelateRule INSTANCE = JOIN;
-
-  /**
-   * Rule that converts a {@link org.apache.calcite.rel.core.SemiJoin}
-   * into a {@link org.apache.calcite.rel.logical.LogicalCorrelate}
-   */
-  public static final JoinToCorrelateRule SEMI =
-      new JoinToCorrelateRule(SemiJoin.class, RelFactories.LOGICAL_BUILDER,
-              "SemiJoinToCorrelateRule", join -> SemiJoinType.SEMI);
-
-  //~ Constructors -----------------------------------------------------------
-
-  /**
-   * Creates a rule that converts a {@link org.apache.calcite.rel.logical.LogicalJoin}
-   * into a {@link org.apache.calcite.rel.logical.LogicalCorrelate}
-   */
+  @Deprecated // to be removed before 2.0
   public JoinToCorrelateRule(RelBuilderFactory relBuilderFactory) {
-    this(LogicalJoin.class, relBuilderFactory, null, join -> SemiJoinType.of(join.getJoinType()));
+    this(Config.DEFAULT.withRelBuilderFactory(relBuilderFactory)
+        .as(Config.class)
+        .withOperandFor(LogicalJoin.class));
   }
 
   @Deprecated // to be removed before 2.0
   protected JoinToCorrelateRule(RelFactories.FilterFactory filterFactory) {
-    this(RelBuilder.proto(Contexts.of(filterFactory)));
-  }
-
-  /**
-   * Creates a JoinToCorrelateRule for a certain sub-class of
-   * {@link org.apache.calcite.rel.core.Join} to be transformed into a
-   * {@link org.apache.calcite.rel.logical.LogicalCorrelate}
-   * @param clazz Class of relational expression to match (must not be null)
-   * @param relBuilderFactory Builder for relational expressions
-   * @param description Description, or null to guess description
-   * @param semiJoinTypeExtractor Function to get the {@link org.apache.calcite.sql.SemiJoinType}
-   *                              for the {@link org.apache.calcite.rel.logical.LogicalCorrelate}
-   */
-  private JoinToCorrelateRule(Class<? extends Join> clazz,
-                             RelBuilderFactory relBuilderFactory,
-                             String description,
-                             Function<Join, SemiJoinType> semiJoinTypeExtractor) {
-    super(operand(clazz, any()), relBuilderFactory, description);
-    this.semiJoinTypeExtractor = semiJoinTypeExtractor;
+    this(Config.DEFAULT
+        .withRelBuilderFactory(RelBuilder.proto(Contexts.of(filterFactory)))
+        .as(Config.class)
+        .withOperandFor(LogicalJoin.class));
   }
 
   //~ Methods ----------------------------------------------------------------
 
-  public boolean matches(RelOptRuleCall call) {
+  @Override public boolean matches(RelOptRuleCall call) {
     Join join = call.rel(0);
-    switch (join.getJoinType()) {
-    case INNER:
-    case LEFT:
-      return true;
-    case FULL:
-    case RIGHT:
-      return false;
-    default:
-      throw Util.unexpected(join.getJoinType());
-    }
+    return !join.getJoinType().generatesNullsOnLeft();
   }
 
-  public void onMatch(RelOptRuleCall call) {
+  @Override public void onMatch(RelOptRuleCall call) {
     assert matches(call);
     final Join join = call.rel(0);
     RelNode right = join.getRight();
@@ -173,9 +123,23 @@ public class JoinToCorrelateRule extends RelOptRule {
             relBuilder.build(),
             correlationId,
             requiredColumns.build(),
-            semiJoinTypeExtractor.apply(join));
+            join.getJoinType());
     call.transformTo(newRel);
   }
-}
 
-// End JoinToCorrelateRule.java
+  /** Rule configuration. */
+  public interface Config extends RelRule.Config {
+    Config DEFAULT = EMPTY.as(Config.class)
+        .withOperandFor(LogicalJoin.class);
+
+    @Override default JoinToCorrelateRule toRule() {
+      return new JoinToCorrelateRule(this);
+    }
+
+    /** Defines an operand tree for the given classes. */
+    default Config withOperandFor(Class<? extends Join> joinClass) {
+      return withOperandSupplier(b -> b.operand(joinClass).anyInputs())
+          .as(Config.class);
+    }
+  }
+}

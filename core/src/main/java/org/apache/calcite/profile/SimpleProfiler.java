@@ -35,6 +35,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableSet;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -45,7 +46,7 @@ import javax.annotation.Nonnull;
  */
 public class SimpleProfiler implements Profiler {
 
-  public Profile profile(Iterable<List<Comparable>> rows,
+  @Override public Profile profile(Iterable<List<Comparable>> rows,
       final List<Column> columns, Collection<ImmutableBitSet> initialGroups) {
     Util.discard(initialGroups); // this profiler ignores initial groups
     return new Run(columns).profile(rows);
@@ -200,7 +201,7 @@ public class SimpleProfiler implements Profiler {
         if (space.columns.size() == 1) {
           nullCount = space.nullCount;
           valueSet = ImmutableSortedSet.copyOf(
-              Iterables.transform(space.values, Iterables::getOnlyElement));
+              Util.transform(space.values, Iterables::getOnlyElement));
         } else {
           nullCount = -1;
           valueSet = null;
@@ -279,7 +280,7 @@ public class SimpleProfiler implements Profiler {
 
     private ImmutableSortedSet<Column> toColumns(Iterable<Integer> ordinals) {
       return ImmutableSortedSet.copyOf(
-          Iterables.transform(ordinals, columns::get));
+          Util.transform(ordinals, columns::get));
     }
   }
 
@@ -288,7 +289,7 @@ public class SimpleProfiler implements Profiler {
     final ImmutableBitSet columnOrdinals;
     final ImmutableSortedSet<Column> columns;
     int nullCount;
-    final SortedSet<FlatLists.ComparableList<Comparable>> values =
+    final NavigableSet<FlatLists.ComparableList<Comparable>> values =
         new TreeSet<>();
     boolean unique;
     final BitSet dependencies = new BitSet();
@@ -309,7 +310,7 @@ public class SimpleProfiler implements Profiler {
           && columnOrdinals.equals(((Space) o).columnOrdinals);
     }
 
-    public int compareTo(@Nonnull Space o) {
+    @Override public int compareTo(@Nonnull Space o) {
       return columnOrdinals.equals(o.columnOrdinals) ? 0
           : columnOrdinals.contains(o.columnOrdinals) ? 1
               : -1;
@@ -321,5 +322,3 @@ public class SimpleProfiler implements Profiler {
     }
   }
 }
-
-// End SimpleProfiler.java

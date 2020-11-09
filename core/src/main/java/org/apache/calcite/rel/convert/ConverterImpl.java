@@ -71,14 +71,12 @@ public abstract class ConverterImpl extends SingleRel
         + inTraits + " traits");
   }
 
-  public RelTraitSet getInputTraits() {
+  @Override public RelTraitSet getInputTraits() {
     return inTraits;
   }
 
-  public RelTraitDef getTraitDef() {
+  @Override public RelTraitDef getTraitDef() {
     return traitDef;
   }
 
 }
-
-// End ConverterImpl.java

@@ -27,7 +27,7 @@ import java.util.List;
 
 /**
  * Implementation of
- * {@link org.apache.calcite.adapter.enumerable.AggResultContext}
+ * {@link org.apache.calcite.adapter.enumerable.AggResultContext}.
  */
 public class AggResultContextImpl extends AggResetContextImpl
     implements AggResultContext {
@@ -53,11 +53,11 @@ public class AggResultContextImpl extends AggResetContextImpl
     this.keyPhysType = keyPhysType;
   }
 
-  public Expression key() {
+  @Override public Expression key() {
     return key;
   }
 
-  public Expression keyField(int i) {
+  @Override public Expression keyField(int i) {
     return keyPhysType.fieldReference(key, i);
   }
 
@@ -65,5 +65,3 @@ public class AggResultContextImpl extends AggResetContextImpl
     return call;
   }
 }
-
-// End AggResultContextImpl.java

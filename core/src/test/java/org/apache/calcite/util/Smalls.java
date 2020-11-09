@@ -50,6 +50,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
 
 import com.google.common.collect.ImmutableList;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.sql.Date;
@@ -59,10 +60,11 @@ import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.hamcrest.CoreMatchers.is;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 /**
  * Holder for various classes and functions used in tests as user-defined
@@ -71,6 +73,10 @@ import static org.junit.Assert.assertThat;
 public class Smalls {
   public static final Method GENERATE_STRINGS_METHOD =
       Types.lookupMethod(Smalls.class, "generateStrings", Integer.class);
+  public static final Method GENERATE_STRINGS_OF_INPUT_SIZE_METHOD =
+      Types.lookupMethod(Smalls.class, "generateStringsOfInputSize", List.class);
+  public static final Method GENERATE_STRINGS_OF_INPUT_MAP_SIZE_METHOD =
+      Types.lookupMethod(Smalls.class, "generateStringsOfInputMapSize", Map.class);
   public static final Method MAZE_METHOD =
       Types.lookupMethod(MazeTable.class, "generate", int.class, int.class,
           int.class);
@@ -181,6 +187,13 @@ public class Smalls {
     };
   }
 
+  public static QueryableTable generateStringsOfInputSize(final List<Integer> list) {
+    return generateStrings(list.size());
+  }
+  public static QueryableTable generateStringsOfInputMapSize(final Map<Integer, Integer> map) {
+    return generateStrings(map.size());
+  }
+
   /** A function that generates multiplication table of {@code ncol} columns x
    * {@code nrow} rows. */
   public static QueryableTable multiplicationTable(final int ncol,
@@ -284,9 +297,7 @@ public class Smalls {
     };
   }
 
-  /**
-   * A function that adds a number to the first column of input cursor
-   */
+  /** Table function that adds a number to the first column of input cursor. */
   public static QueryableTable processCursor(final int offset,
       final Enumerable<Object[]> a) {
     return new AbstractQueryableTable(Object[].class) {
@@ -370,11 +381,12 @@ public class Smalls {
   /** Example of a UDF with a non-static {@code eval} method,
    * and named parameters. */
   public static class MyPlusFunction {
-    public static final AtomicInteger INSTANCE_COUNT = new AtomicInteger(0);
+    public static final ThreadLocal<AtomicInteger> INSTANCE_COUNT =
+        new ThreadLocal<>().withInitial(() -> new AtomicInteger(0));
 
     // Note: Not marked @Deterministic
     public MyPlusFunction() {
-      INSTANCE_COUNT.incrementAndGet();
+      INSTANCE_COUNT.get().incrementAndGet();
     }
 
     public int eval(@Parameter(name = "x") int x,
@@ -385,14 +397,18 @@ public class Smalls {
 
   /** As {@link MyPlusFunction} but declared to be deterministic. */
   public static class MyDeterministicPlusFunction {
-    public static final AtomicInteger INSTANCE_COUNT = new AtomicInteger(0);
+    public static final ThreadLocal<AtomicInteger> INSTANCE_COUNT =
+        new ThreadLocal<>().withInitial(() -> new AtomicInteger(0));
 
     @Deterministic public MyDeterministicPlusFunction() {
-      INSTANCE_COUNT.incrementAndGet();
+      INSTANCE_COUNT.get().incrementAndGet();
     }
 
-    public int eval(@Parameter(name = "x") int x,
-        @Parameter(name = "y") int y) {
+    public Integer eval(@Parameter(name = "x") Integer x,
+        @Parameter(name = "y") Integer y) {
+      if (x == null || y == null) {
+        return null;
+      }
       return x + y;
     }
   }
@@ -465,6 +481,20 @@ public class Smalls {
   public static class MyIncrement {
     public float eval(int x, int y) {
       return x + x * y / 100;
+    }
+  }
+
+  /** User-defined function that declares exceptions. */
+  public static class MyExceptionFunction {
+    public MyExceptionFunction() {}
+
+    public static int eval(int x) throws IllegalArgumentException, IOException {
+      if (x < 0) {
+        throw new IllegalArgumentException("Illegal argument: " + x);
+      } else if (x > 100) {
+        throw new IOException("IOException when argument > 100");
+      }
+      return x + 10;
     }
   }
 
@@ -574,9 +604,9 @@ public class Smalls {
     public static java.sql.Time toTimeFun(Long v) {
       return v == null ? null : SqlFunctions.internalToTime(v.intValue());
     }
-    /** for Overloaded user-defined functions that have Double and BigDecimal
-     * arguments will goes wrong
-     * */
+
+    /** For overloaded user-defined functions that have {@code double} and
+     * {@code BigDecimal} arguments will go wrong. */
     public static double toDouble(BigDecimal var) {
       return var == null ? null : var.doubleValue();
     }
@@ -629,7 +659,7 @@ public class Smalls {
     }
   }
 
-  /** A generic interface for defining user defined aggregate functions
+  /** A generic interface for defining user-defined aggregate functions.
    *
    * @param <A> accumulator type
    * @param <V> value type
@@ -794,6 +824,30 @@ public class Smalls {
         @Parameter(name = "R", optional = true) String r,
         @Parameter(name = "S") String s,
         @Parameter(name = "T", optional = true) Integer t) {
+      final StringBuilder sb = new StringBuilder();
+      abc(sb, r);
+      abc(sb, s);
+      abc(sb, t);
+      return view(sb.toString());
+    }
+
+    private void abc(StringBuilder sb, Object s) {
+      if (s != null) {
+        if (sb.length() > 0) {
+          sb.append(", ");
+        }
+        sb.append('(').append(s).append(')');
+      }
+    }
+  }
+
+  /** User-defined table-macro function with named and optional parameters. */
+  public static class AnotherTableMacroFunctionWithNamedParameters {
+    public TranslatableTable eval(
+        @Parameter(name = "R", optional = true) String r,
+        @Parameter(name = "S") String s,
+        @Parameter(name = "T", optional = true) Integer t,
+        @Parameter(name = "S2", optional = true) String s2) {
       final StringBuilder sb = new StringBuilder();
       abc(sb, r);
       abc(sb, s);
@@ -1100,5 +1154,3 @@ public class Smalls {
     }
   }
 }
-
-// End Smalls.java

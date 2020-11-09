@@ -36,15 +36,13 @@ public class Interpreters {
       return (ArrayBindable) rel;
     }
     return new ArrayBindable() {
-      public Enumerable<Object[]> bind(DataContext dataContext) {
+      @Override public Enumerable<Object[]> bind(DataContext dataContext) {
         return new Interpreter(dataContext, rel);
       }
 
-      public Class<Object[]> getElementType() {
+      @Override public Class<Object[]> getElementType() {
         return Object[].class;
       }
     };
   }
 }
-
-// End Interpreters.java

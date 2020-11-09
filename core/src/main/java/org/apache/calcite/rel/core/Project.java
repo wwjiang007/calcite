@@ -25,12 +25,15 @@ import org.apache.calcite.rel.RelInput;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.SingleRel;
+import org.apache.calcite.rel.hint.Hintable;
+import org.apache.calcite.rel.hint.RelHint;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexChecker;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexOver;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.sql.SqlExplainLevel;
@@ -42,10 +45,12 @@ import org.apache.calcite.util.mapping.MappingType;
 import org.apache.calcite.util.mapping.Mappings;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
+
+import org.apiguardian.api.API;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -54,10 +59,12 @@ import java.util.Set;
  *
  * @see org.apache.calcite.rel.logical.LogicalProject
  */
-public abstract class Project extends SingleRel {
+public abstract class Project extends SingleRel implements Hintable {
   //~ Instance fields --------------------------------------------------------
 
   protected final ImmutableList<RexNode> exps;
+
+  protected final ImmutableList<RelHint> hints;
 
   //~ Constructors -----------------------------------------------------------
 
@@ -66,6 +73,7 @@ public abstract class Project extends SingleRel {
    *
    * @param cluster  Cluster that this relational expression belongs to
    * @param traits   Traits of this relational expression
+   * @param hints    Hints of this relation expression
    * @param input    Input relational expression
    * @param projects List of expressions for the input columns
    * @param rowType  Output row type
@@ -73,20 +81,28 @@ public abstract class Project extends SingleRel {
   protected Project(
       RelOptCluster cluster,
       RelTraitSet traits,
+      List<RelHint> hints,
       RelNode input,
       List<? extends RexNode> projects,
       RelDataType rowType) {
     super(cluster, traits, input);
     assert rowType != null;
     this.exps = ImmutableList.copyOf(projects);
+    this.hints = ImmutableList.copyOf(hints);
     this.rowType = rowType;
     assert isValid(Litmus.THROW, null);
   }
 
   @Deprecated // to be removed before 2.0
+  protected Project(RelOptCluster cluster, RelTraitSet traits,
+      RelNode input, List<? extends RexNode> projects, RelDataType rowType) {
+    this(cluster, traits, ImmutableList.of(), input, projects, rowType);
+  }
+
+  @Deprecated // to be removed before 2.0
   protected Project(RelOptCluster cluster, RelTraitSet traitSet, RelNode input,
       List<? extends RexNode> projects, RelDataType rowType, int flags) {
-    this(cluster, traitSet, input, projects, rowType);
+    this(cluster, traitSet, ImmutableList.of(), input, projects, rowType);
     Util.discard(flags);
   }
 
@@ -96,6 +112,7 @@ public abstract class Project extends SingleRel {
   protected Project(RelInput input) {
     this(input.getCluster(),
         input.getTraitSet(),
+        ImmutableList.of(),
         input.getInput(),
         input.getExpressionList("exprs"),
         input.getRowType("exprs", "fields"));
@@ -136,15 +153,17 @@ public abstract class Project extends SingleRel {
     return true;
   }
 
-  @Override public List<RexNode> getChildExps() {
-    return exps;
-  }
-
-  public RelNode accept(RexShuttle shuttle) {
+  @Override public RelNode accept(RexShuttle shuttle) {
     List<RexNode> exps = shuttle.apply(this.exps);
     if (this.exps == exps) {
       return this;
     }
+    final RelDataType rowType =
+        RexUtil.createStructType(
+            getInput().getCluster().getTypeFactory(),
+            exps,
+            this.rowType.getFieldNames(),
+            null);
     return copy(traitSet, getInput(), exps, rowType);
   }
 
@@ -167,12 +186,21 @@ public abstract class Project extends SingleRel {
     return Pair.zip(getProjects(), getRowType().getFieldNames());
   }
 
+  @Override public ImmutableList<RelHint> getHints() {
+    return hints;
+  }
+
   @Deprecated // to be removed before 2.0
   public int getFlags() {
     return 1;
   }
 
-  public boolean isValid(Litmus litmus, Context context) {
+  /** Returns whether this Project contains any windowed-aggregate functions. */
+  public final boolean containsOver() {
+    return RexOver.containsOver(getProjects(), null);
+  }
+
+  @Override public boolean isValid(Litmus litmus, Context context) {
     if (!super.isValid(litmus, context)) {
       return litmus.fail(null);
     }
@@ -193,7 +221,7 @@ public abstract class Project extends SingleRel {
       return litmus.fail("field names not distinct: {}", rowType);
     }
     //CHECKSTYLE: IGNORE 1
-    if (false && !Util.isDistinct(Lists.transform(exps, RexNode::toString))) {
+    if (false && !Util.isDistinct(Util.transform(exps, RexNode::toString))) {
       // Projecting the same expression twice is usually a bad idea,
       // because it may create expressions downstream which are equivalent
       // but which look different. We can't ban duplicate projects,
@@ -213,8 +241,41 @@ public abstract class Project extends SingleRel {
     return planner.getCostFactory().makeCost(dRows, dCpu, dIo);
   }
 
-  public RelWriter explainTerms(RelWriter pw) {
+  /**
+   * Returns the number of expressions at the front of an array which are
+   * simply projections of the same field.
+   *
+   * @param refs References
+   * @return the index of the first non-trivial expression, or list.size otherwise
+   */
+  private static int countTrivial(List<RexNode> refs) {
+    for (int i = 0; i < refs.size(); i++) {
+      RexNode ref = refs.get(i);
+      if (!(ref instanceof RexInputRef)
+          || ((RexInputRef) ref).getIndex() != i) {
+        return i;
+      }
+    }
+    return refs.size();
+  }
+
+  @Override public RelWriter explainTerms(RelWriter pw) {
     super.explainTerms(pw);
+    // Skip writing field names so the optimizer can reuse the projects that differ in
+    // field names only
+    if (pw.getDetailLevel() == SqlExplainLevel.DIGEST_ATTRIBUTES) {
+      final int firstNonTrivial = countTrivial(exps);
+      if (firstNonTrivial == 1) {
+        pw.item("inputs", "0");
+      } else if (firstNonTrivial != 0) {
+        pw.item("inputs", "0.." + (firstNonTrivial - 1));
+      }
+      if (firstNonTrivial != exps.size()) {
+        pw.item("exprs", exps.subList(firstNonTrivial, exps.size()));
+      }
+      return pw;
+    }
+
     if (pw.nest()) {
       pw.item("fields", rowType.getFieldNames());
       pw.item("exprs", exps);
@@ -228,17 +289,28 @@ public abstract class Project extends SingleRel {
       }
     }
 
-    // If we're generating a digest, include the rowtype. If two projects
-    // differ in return type, we don't want to regard them as equivalent,
-    // otherwise we will try to put rels of different types into the same
-    // planner equivalence set.
-    //CHECKSTYLE: IGNORE 2
-    if ((pw.getDetailLevel() == SqlExplainLevel.DIGEST_ATTRIBUTES)
-        && false) {
-      pw.item("type", rowType);
-    }
-
     return pw;
+  }
+
+  @API(since = "1.24", status = API.Status.INTERNAL)
+  protected boolean deepEquals0(Object obj) {
+    if (this == obj) {
+      return true;
+    }
+    if (obj == null || getClass() != obj.getClass()) {
+      return false;
+    }
+    Project o = (Project) obj;
+    return traitSet.equals(o.traitSet)
+        && input.deepEquals(o.input)
+        && exps.equals(o.exps)
+        && hints.equals(o.hints)
+        && getRowType().equalsSansFieldNames(o.getRowType());
+  }
+
+  @API(since = "1.24", status = API.Status.INTERNAL)
+  protected int deepHashCode0() {
+    return Objects.hash(traitSet, input.deepHashCode(), exps, hints);
   }
 
   /**
@@ -254,10 +326,10 @@ public abstract class Project extends SingleRel {
    * Returns a mapping of a set of project expressions.
    *
    * <p>The mapping is an inverse surjection.
-   * Every target has a source field, but
-   * a source field may appear as zero, one, or more target fields.
+   * Every target has a source field, but no
+   * source has more than one target.
    * Thus you can safely call
-   * {@link org.apache.calcite.util.mapping.Mappings.TargetMapping#getTarget(int)}.
+   * {@link org.apache.calcite.util.mapping.Mappings.TargetMapping#getSourceOpt(int)}.
    *
    * @param inputFieldCount Number of input fields
    * @param projects Project expressions
@@ -276,7 +348,12 @@ public abstract class Project extends SingleRel {
       if (!(exp.e instanceof RexInputRef)) {
         return null;
       }
-      mapping.set(((RexInputRef) exp.e).getIndex(), exp.i);
+
+      int source = ((RexInputRef) exp.e).getIndex();
+      if (mapping.getTargetOpt(source) != -1) {
+        return null;
+      }
+      mapping.set(source, exp.i);
     }
     return mapping;
   }
@@ -369,5 +446,3 @@ public abstract class Project extends SingleRel {
     public static final int NONE = 0;
   }
 }
-
-// End Project.java

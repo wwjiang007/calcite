@@ -56,7 +56,7 @@ public class MongoSort extends Sort implements MongoRel {
         fetch);
   }
 
-  public void implement(Implementor implementor) {
+  @Override public void implement(Implementor implementor) {
     implementor.visitChild(0, getInput());
     if (!collation.getFieldCollations().isEmpty()) {
       final List<String> keys = new ArrayList<>();
@@ -71,6 +71,8 @@ public class MongoSort extends Sort implements MongoRel {
           case FIRST:
             break;
           case LAST:
+            break;
+          default:
             break;
           }
         }
@@ -100,5 +102,3 @@ public class MongoSort extends Sort implements MongoRel {
     }
   }
 }
-
-// End MongoSort.java

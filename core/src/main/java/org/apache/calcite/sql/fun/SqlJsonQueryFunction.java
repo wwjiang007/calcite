@@ -37,11 +37,10 @@ import org.apache.calcite.sql.type.SqlTypeTransforms;
 public class SqlJsonQueryFunction extends SqlFunction {
   public SqlJsonQueryFunction() {
     super("JSON_QUERY", SqlKind.OTHER_FUNCTION,
-        ReturnTypes.cascade(ReturnTypes.VARCHAR_2000,
-            SqlTypeTransforms.FORCE_NULLABLE),
+        ReturnTypes.VARCHAR_2000.andThen(SqlTypeTransforms.FORCE_NULLABLE),
         null,
-        OperandTypes.family(SqlTypeFamily.ANY,
-            SqlTypeFamily.CHARACTER, SqlTypeFamily.ANY, SqlTypeFamily.ANY, SqlTypeFamily.ANY),
+        OperandTypes.family(SqlTypeFamily.ANY, SqlTypeFamily.CHARACTER,
+            SqlTypeFamily.ANY, SqlTypeFamily.ANY, SqlTypeFamily.ANY),
         SqlFunctionCategory.SYSTEM);
   }
 
@@ -116,5 +115,3 @@ public class SqlJsonQueryFunction extends SqlFunction {
     return (E) ((SqlLiteral) operand).getValue();
   }
 }
-
-// End SqlJsonQueryFunction.java

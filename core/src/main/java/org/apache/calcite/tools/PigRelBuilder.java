@@ -38,8 +38,7 @@ import java.util.List;
  */
 public class PigRelBuilder extends RelBuilder {
   private String lastAlias;
-
-  private PigRelBuilder(Context context,
+  protected PigRelBuilder(Context context,
       RelOptCluster cluster,
       RelOptSchema relOptSchema) {
     super(context, cluster, relOptSchema);
@@ -123,19 +122,12 @@ public class PigRelBuilder extends RelBuilder {
 
   public PigRelBuilder group(GroupOption option, Partitioner partitioner,
       int parallel, Iterable<? extends GroupKey> groupKeys) {
-    @SuppressWarnings("unchecked") final List<GroupKeyImpl> groupKeyList =
-        ImmutableList.copyOf((Iterable) groupKeys);
-    if (groupKeyList.isEmpty()) {
-      throw new IllegalArgumentException("must have at least one group");
-    }
-    final int groupCount = groupKeyList.get(0).nodes.size();
-    for (GroupKeyImpl groupKey : groupKeyList) {
-      if (groupKey.nodes.size() != groupCount) {
-        throw new IllegalArgumentException("group key size mismatch");
-      }
-    }
+    final List<GroupKey> groupKeyList = ImmutableList.copyOf(groupKeys);
+    validateGroupList(groupKeyList);
+
+    final int groupCount = groupKeyList.get(0).groupKeyCount();
     final int n = groupKeyList.size();
-    for (Ord<GroupKeyImpl> groupKey : Ord.reverse(groupKeyList)) {
+    for (Ord<GroupKey> groupKey : Ord.reverse(groupKeyList)) {
       RelNode r = null;
       if (groupKey.i < n - 1) {
         r = build();
@@ -159,7 +151,19 @@ public class PigRelBuilder extends RelBuilder {
     return this;
   }
 
-  String getAlias() {
+  protected void validateGroupList(List<GroupKey> groupKeyList) {
+    if (groupKeyList.isEmpty()) {
+      throw new IllegalArgumentException("must have at least one group");
+    }
+    final int groupCount = groupKeyList.get(0).groupKeyCount();
+    for (GroupKey groupKey : groupKeyList) {
+      if (groupKey.groupKeyCount() != groupCount) {
+        throw new IllegalArgumentException("group key size mismatch");
+      }
+    }
+  }
+
+  public String getAlias() {
     if (lastAlias != null) {
       return lastAlias;
     } else {
@@ -178,15 +182,13 @@ public class PigRelBuilder extends RelBuilder {
     return super.as(alias);
   }
 
-  /** Partitioner for group and join */
+  /** Partitioner for group and join. */
   interface Partitioner {
   }
 
-  /** Option for performing group efficiently if data set is already sorted */
+  /** Option for performing group efficiently if data set is already sorted. */
   public enum GroupOption {
     MERGE,
     COLLECTED
   }
 }
-
-// End PigRelBuilder.java

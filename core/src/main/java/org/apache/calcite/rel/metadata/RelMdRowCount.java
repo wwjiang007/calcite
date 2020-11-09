@@ -22,19 +22,19 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.SingleRel;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.Calc;
+import org.apache.calcite.rel.core.Exchange;
 import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Intersect;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.Minus;
 import org.apache.calcite.rel.core.Project;
-import org.apache.calcite.rel.core.SemiJoin;
 import org.apache.calcite.rel.core.Sort;
+import org.apache.calcite.rel.core.TableModify;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.core.Union;
 import org.apache.calcite.rel.core.Values;
 import org.apache.calcite.rex.RexDynamicParam;
 import org.apache.calcite.rex.RexLiteral;
-import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.util.Bug;
 import org.apache.calcite.util.BuiltInMethod;
 import org.apache.calcite.util.ImmutableBitSet;
@@ -53,7 +53,7 @@ public class RelMdRowCount
 
   //~ Methods ----------------------------------------------------------------
 
-  public MetadataDef<BuiltInMetadata.RowCount> getDef() {
+  @Override public MetadataDef<BuiltInMetadata.RowCount> getDef() {
     return BuiltInMetadata.RowCount.DEF;
   }
 
@@ -67,6 +67,7 @@ public class RelMdRowCount
     return rel.estimateRowCount(mq);
   }
 
+  @SuppressWarnings("CatchAndPrintStackTrace")
   public Double getRowCount(RelSubset subset, RelMetadataQuery mq) {
     if (!Bug.CALCITE_1048_FIXED) {
       return mq.getRowCount(Util.first(subset.getBest(), subset.getOriginal()));
@@ -93,6 +94,9 @@ public class RelMdRowCount
       }
       rowCount += partialRowCount;
     }
+    if (!rel.all) {
+      rowCount *= 0.5;
+    }
     return rowCount;
   }
 
@@ -105,7 +109,11 @@ public class RelMdRowCount
         rowCount = partialRowCount;
       }
     }
-    return rowCount;
+    if (rowCount == null || !rel.all) {
+      return rowCount;
+    } else {
+      return rowCount * 2;
+    }
   }
 
   public Double getRowCount(Minus rel, RelMetadataQuery mq) {
@@ -188,19 +196,8 @@ public class RelMdRowCount
     return RelMdUtil.getJoinRowCount(mq, rel, rel.getCondition());
   }
 
-  public Double getRowCount(SemiJoin rel, RelMetadataQuery mq) {
-    // create a RexNode representing the selectivity of the
-    // semijoin filter and pass it to getSelectivity
-    RexNode semiJoinSelectivity =
-        RelMdUtil.makeSemiJoinSelectivityRexNode(mq, rel);
-
-    return NumberUtil.multiply(
-        mq.getSelectivity(rel.getLeft(), semiJoinSelectivity),
-        mq.getRowCount(rel.getLeft()));
-  }
-
   public Double getRowCount(Aggregate rel, RelMetadataQuery mq) {
-    ImmutableBitSet groupKey = rel.getGroupSet(); // .range(rel.getGroupCount());
+    ImmutableBitSet groupKey = rel.getGroupSet();
 
     // rowCount is the cardinality of the group by columns
     Double distinctRowCount =
@@ -222,6 +219,12 @@ public class RelMdRowCount
   public Double getRowCount(Values rel, RelMetadataQuery mq) {
     return rel.estimateRowCount(mq);
   }
-}
 
-// End RelMdRowCount.java
+  public Double getRowCount(Exchange rel, RelMetadataQuery mq) {
+    return mq.getRowCount(rel.getInput());
+  }
+
+  public Double getRowCount(TableModify rel, RelMetadataQuery mq) {
+    return mq.getRowCount(rel.getInput());
+  }
+}

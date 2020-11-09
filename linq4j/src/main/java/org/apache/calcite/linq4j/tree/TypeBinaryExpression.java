@@ -24,6 +24,7 @@ import java.util.Objects;
  */
 public class TypeBinaryExpression extends Expression {
   public final Expression expression;
+  @SuppressWarnings("HidingField")
   public final Type type;
 
   public TypeBinaryExpression(ExpressionType nodeType, Expression expression,
@@ -40,11 +41,11 @@ public class TypeBinaryExpression extends Expression {
     return shuttle.visit(this, expression);
   }
 
-  public <R> R accept(Visitor<R> visitor) {
+  @Override public <R> R accept(Visitor<R> visitor) {
     return visitor.visit(this);
   }
 
-  void accept(ExpressionWriter writer, int lprec, int rprec) {
+  @Override void accept(ExpressionWriter writer, int lprec, int rprec) {
     if (writer.requireParentheses(this, lprec, rprec)) {
       return;
     }
@@ -80,5 +81,3 @@ public class TypeBinaryExpression extends Expression {
     return Objects.hash(nodeType, super.type, type, expression);
   }
 }
-
-// End TypeBinaryExpression.java

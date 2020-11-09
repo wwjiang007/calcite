@@ -38,10 +38,8 @@ public class CursorReturnTypeInference implements SqlReturnTypeInference {
 
   //~ Methods ----------------------------------------------------------------
 
-  public RelDataType inferReturnType(
+  @Override public RelDataType inferReturnType(
       SqlOperatorBinding opBinding) {
     return opBinding.getCursorOperand(ordinal);
   }
 }
-
-// End CursorReturnTypeInference.java

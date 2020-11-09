@@ -24,10 +24,12 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 
 /**
- * A {@code java.util.Map} implementation which ignores any {@code put} operation.
+ * An implementation of {@code java.util.Map} that ignores any {@code put}
+ * operation.
  *
- * The implementation does not fully conform to {@code java.util.Map} API, as any
- * write operation would succeed, but any read operation would not return any value.
+ * <p>The implementation does not fully conform to {@code java.util.Map} API, as
+ * any write operation would succeed, but any read operation would not return
+ * any value.
  *
  * @param <K> the type of the keys for the map
  * @param <V> the type of the values for the map
@@ -99,7 +101,7 @@ final class BlackholeMap<K, V> extends AbstractMap<K, V> {
   }
 
   /**
-   * Gets an instance of {@code BlackholeMap}
+   * Gets an instance of {@code BlackholeMap}.
    *
    * @param <K> type of the keys for the map
    * @param <V> type of the values for the map
@@ -110,5 +112,3 @@ final class BlackholeMap<K, V> extends AbstractMap<K, V> {
     return (Map<K, V>) INSTANCE;
   }
 }
-
-// End BlackholeMap.java

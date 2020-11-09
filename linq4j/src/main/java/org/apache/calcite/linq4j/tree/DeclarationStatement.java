@@ -45,7 +45,7 @@ public class DeclarationStatement extends Statement {
     return shuttle.visit(this, initializer);
   }
 
-  public <R> R accept(Visitor<R> visitor) {
+  @Override public <R> R accept(Visitor<R> visitor) {
     return visitor.visit(this);
   }
 
@@ -109,5 +109,3 @@ public class DeclarationStatement extends Statement {
     return Objects.hash(nodeType, type, modifiers, parameter, initializer);
   }
 }
-
-// End DeclarationStatement.java

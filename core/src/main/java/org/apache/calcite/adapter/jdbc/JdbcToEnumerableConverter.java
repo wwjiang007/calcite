@@ -57,6 +57,7 @@ import java.util.Calendar;
 import java.util.List;
 import java.util.TimeZone;
 import java.util.stream.Collectors;
+import javax.sql.DataSource;
 
 /**
  * Relational expression representing a scan of a table in a JDBC data source.
@@ -81,7 +82,7 @@ public class JdbcToEnumerableConverter
     return super.computeSelfCost(planner, mq).multiplyBy(.1);
   }
 
-  public Result implement(EnumerableRelImplementor implementor, Prefer pref) {
+  @Override public Result implement(EnumerableRelImplementor implementor, Prefer pref) {
     // Generate:
     //   ResultSetEnumerable.of(schema.getDataSource(), "select ...")
     final BlockBuilder builder0 = new BlockBuilder(false);
@@ -171,22 +172,15 @@ public class JdbcToEnumerableConverter
       enumerable = builder0.append("enumerable",
           Expressions.call(
               BuiltInMethod.RESULT_SET_ENUMERABLE_OF_PREPARED.method,
-              Expressions.call(
-                  Schemas.unwrap(jdbcConvention.expression,
-                      JdbcSchema.class),
-                  BuiltInMethod.JDBC_SCHEMA_DATA_SOURCE.method),
+              Schemas.unwrap(jdbcConvention.expression, DataSource.class),
               sql_,
               rowBuilderFactory_,
               preparedStatementConsumer_));
     } else {
-      enumerable = builder0.append(
-          "enumerable",
+      enumerable = builder0.append("enumerable",
           Expressions.call(
               BuiltInMethod.RESULT_SET_ENUMERABLE_OF.method,
-              Expressions.call(
-                  Schemas.unwrap(jdbcConvention.expression,
-                      JdbcSchema.class),
-                  BuiltInMethod.JDBC_SCHEMA_DATA_SOURCE.method),
+              Schemas.unwrap(jdbcConvention.expression, DataSource.class),
               sql_,
               rowBuilderFactory_));
     }
@@ -243,7 +237,12 @@ public class JdbcToEnumerableConverter
       case TIMESTAMP:
       case DATE:
         offset = true;
+        break;
+      default:
+        break;
       }
+      break;
+    default:
       break;
     }
     final Expression source;
@@ -336,9 +335,7 @@ public class JdbcToEnumerableConverter
         new JdbcImplementor(dialect,
             (JavaTypeFactory) getCluster().getTypeFactory());
     final JdbcImplementor.Result result =
-        jdbcImplementor.visitChild(0, getInput());
+        jdbcImplementor.visitInput(this, 0);
     return result.asStatement().toSqlString(dialect);
   }
 }
-
-// End JdbcToEnumerableConverter.java

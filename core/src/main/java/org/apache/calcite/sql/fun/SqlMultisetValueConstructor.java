@@ -61,7 +61,7 @@ public class SqlMultisetValueConstructor extends SqlSpecialOperator {
 
   //~ Methods ----------------------------------------------------------------
 
-  public RelDataType inferReturnType(
+  @Override public RelDataType inferReturnType(
       SqlOperatorBinding opBinding) {
     RelDataType type =
         getComponentType(
@@ -82,14 +82,11 @@ public class SqlMultisetValueConstructor extends SqlSpecialOperator {
     return typeFactory.leastRestrictive(argTypes);
   }
 
-  public boolean checkOperandTypes(
+  @Override public boolean checkOperandTypes(
       SqlCallBinding callBinding,
       boolean throwOnFailure) {
     final List<RelDataType> argTypes =
-        SqlTypeUtil.deriveAndCollectTypes(
-            callBinding.getValidator(),
-            callBinding.getScope(),
-            callBinding.operands());
+        SqlTypeUtil.deriveType(callBinding, callBinding.operands());
     if (argTypes.size() == 0) {
       throw callBinding.newValidationError(RESOURCE.requireAtLeastOneArg());
     }
@@ -106,7 +103,7 @@ public class SqlMultisetValueConstructor extends SqlSpecialOperator {
     return true;
   }
 
-  public void unparse(
+  @Override public void unparse(
       SqlWriter writer,
       SqlCall call,
       int leftPrec,
@@ -120,5 +117,3 @@ public class SqlMultisetValueConstructor extends SqlSpecialOperator {
     writer.endList(frame);
   }
 }
-
-// End SqlMultisetValueConstructor.java

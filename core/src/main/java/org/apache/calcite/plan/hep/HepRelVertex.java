@@ -75,10 +75,6 @@ public class HepRelVertex extends AbstractRelNode {
     return currentRel.getRowType();
   }
 
-  @Override protected String computeDigest() {
-    return "HepRelVertex(" + currentRel + ")";
-  }
-
   /**
    * Replaces the implementation for this expression with a new one.
    *
@@ -89,11 +85,23 @@ public class HepRelVertex extends AbstractRelNode {
   }
 
   /**
-   * @return current implementation chosen for this vertex
+   * Returns current implementation chosen for this vertex.
    */
   public RelNode getCurrentRel() {
     return currentRel;
   }
-}
 
-// End HepRelVertex.java
+  @Override public boolean deepEquals(Object obj) {
+    return this == obj
+        || (obj instanceof HepRelVertex
+            && currentRel == ((HepRelVertex) obj).currentRel);
+  }
+
+  @Override public int deepHashCode() {
+    return currentRel.getId();
+  }
+
+  @Override public String getDigest() {
+    return "HepRelVertex(" + currentRel + ')';
+  }
+}

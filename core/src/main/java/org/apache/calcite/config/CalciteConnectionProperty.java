@@ -21,16 +21,15 @@ import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.avatica.util.Quoting;
 import org.apache.calcite.model.JsonSchema;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
-import org.apache.calcite.util.Bug;
 
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TimeZone;
 
 import static org.apache.calcite.avatica.ConnectionConfigImpl.PropEnv;
+import static org.apache.calcite.avatica.ConnectionConfigImpl.parse;
 
 /**
  * Properties that may be specified on the JDBC connect string.
@@ -79,8 +78,8 @@ public enum CalciteConnectionProperty implements ConnectionProperty {
   LEX("lex", Type.ENUM, Lex.ORACLE, false),
 
   /** Collection of built-in functions and operators. Valid values include
-   * "standard", "mysql", "oracle", "postgresql" and "spatial", and also
-   * comma-separated lists, for example "oracle,spatial". */
+   * "standard", "bigquery", "mysql", "oracle", "postgresql" and "spatial",
+   * and also comma-separated lists, for example "oracle,spatial". */
   FUN("fun", Type.STRING, "standard", true),
 
   /** How identifiers are quoted.
@@ -134,6 +133,13 @@ public enum CalciteConnectionProperty implements ConnectionProperty {
    * Never null. */
   TIME_ZONE("timeZone", Type.STRING, TimeZone.getDefault().getID(), false),
 
+  /** Returns the locale from the connect string.
+   * If the locale is not set, returns the root locale.
+   * Never null.
+   * Examples of valid locales: 'en', 'en_US',
+   * 'de_DE', '_GB', 'en_US_WIN', 'de__POSIX', 'fr__MAC', ''. */
+  LOCALE("locale", Type.STRING, Locale.ROOT.toString(), false),
+
   /** If the planner should try de-correlating as much as it is possible.
    * If true (the default), Calcite de-correlates the plan. */
   FORCE_DECORRELATE("forceDecorrelate", Type.BOOLEAN, true, false),
@@ -144,10 +150,22 @@ public enum CalciteConnectionProperty implements ConnectionProperty {
   TYPE_SYSTEM("typeSystem", Type.PLUGIN, null, false),
 
   /** SQL conformance level. */
-  CONFORMANCE("conformance", Type.ENUM, SqlConformanceEnum.DEFAULT, false);
+  CONFORMANCE("conformance", Type.ENUM, SqlConformanceEnum.DEFAULT, false),
+
+  /** Whether to make implicit type coercion when type mismatch
+   * for validation, default true. */
+  TYPE_COERCION("typeCoercion", Type.BOOLEAN, true, false),
+
+  /** Whether to make create implicit functions if functions do not exist
+   * in the operator table, default false. */
+  LENIENT_OPERATOR_LOOKUP("lenientOperatorLookup", Type.BOOLEAN, false, false),
+
+  /** Whether to enable top-down optimization in Volcano planner. */
+  TOPDOWN_OPT("topDownOpt", Type.BOOLEAN, CalciteSystemProperty.TOPDOWN_OPT.value(), false);
 
   private final String camelName;
   private final Type type;
+  @SuppressWarnings("ImmutableEnumChecker")
   private final Object defaultValue;
   private final boolean required;
   private final Class valueClass;
@@ -183,50 +201,27 @@ public enum CalciteConnectionProperty implements ConnectionProperty {
     }
   }
 
-  public String camelName() {
+  @Override public String camelName() {
     return camelName;
   }
 
-  public Object defaultValue() {
+  @Override public Object defaultValue() {
     return defaultValue;
   }
 
-  public Type type() {
+  @Override public Type type() {
     return type;
   }
 
-  public Class valueClass() {
+  @Override public Class valueClass() {
     return valueClass;
   }
 
-  public boolean required() {
+  @Override public boolean required() {
     return required;
   }
 
-  public PropEnv wrap(Properties properties) {
-    return new PropEnv(parse2(properties, NAME_TO_PROPS), this);
+  @Override public PropEnv wrap(Properties properties) {
+    return new PropEnv(parse(properties, NAME_TO_PROPS), this);
   }
-
-  /** Fixed version of
-   * {@link org.apache.calcite.avatica.ConnectionConfigImpl#parse}
-   * until we upgrade Avatica. */
-  private static Map<ConnectionProperty, String> parse2(Properties properties,
-      Map<String, ? extends ConnectionProperty> nameToProps) {
-    Bug.upgrade("avatica-1.10");
-    final Map<ConnectionProperty, String> map = new LinkedHashMap<>();
-    for (String name : properties.stringPropertyNames()) {
-      final ConnectionProperty connectionProperty =
-          nameToProps.get(name.toUpperCase(Locale.ROOT));
-      if (connectionProperty == null) {
-        // For now, don't throw. It messes up sub-projects.
-        //throw new RuntimeException("Unknown property '" + name + "'");
-        continue;
-      }
-      map.put(connectionProperty, properties.getProperty(name));
-    }
-    return map;
-  }
-
 }
-
-// End CalciteConnectionProperty.java

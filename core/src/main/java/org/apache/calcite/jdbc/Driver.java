@@ -81,14 +81,8 @@ public class Driver extends UnregisteredDriver {
     }
   }
 
-  protected DriverVersion createDriverVersion() {
-    return DriverVersion.load(
-        Driver.class,
-        "org-apache-calcite-jdbc.properties",
-        "Calcite JDBC Driver",
-        "unknown version",
-        "Calcite",
-        "unknown version");
+  @Override protected DriverVersion createDriverVersion() {
+    return CalciteDriverVersion.INSTANCE;
   }
 
   @Override protected Handler createHandler() {
@@ -127,6 +121,8 @@ public class Driver extends UnregisteredDriver {
               break;
             case MAP:
               schemaFactory = AbstractSchema.Factory.INSTANCE;
+              break;
+            default:
               break;
             }
           }
@@ -185,5 +181,3 @@ public class Driver extends UnregisteredDriver {
             rootSchema, typeFactory);
   }
 }
-
-// End Driver.java

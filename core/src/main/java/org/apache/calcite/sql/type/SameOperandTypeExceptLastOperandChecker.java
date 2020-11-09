@@ -47,7 +47,7 @@ public class SameOperandTypeExceptLastOperandChecker extends SameOperandTypeChec
 
   //~ Methods ----------------------------------------------------------------
 
-  protected boolean checkOperandTypesImpl(
+  @Override protected boolean checkOperandTypesImpl(
       SqlOperatorBinding operatorBinding,
       boolean throwOnFailure,
       SqlCallBinding callBinding) {
@@ -61,14 +61,18 @@ public class SameOperandTypeExceptLastOperandChecker extends SameOperandTypeChec
         getOperandList(operatorBinding.getOperandCount());
     for (int i : operandList) {
       if (operatorBinding.isOperandNull(i, false)) {
-        if (throwOnFailure) {
+        if (callBinding.isTypeCoercionEnabled()) {
+          types[i] = operatorBinding.getTypeFactory()
+              .createSqlType(SqlTypeName.NULL);
+        } else if (throwOnFailure) {
           throw callBinding.getValidator().newValidationError(
               callBinding.operand(i), RESOURCE.nullIllegal());
         } else {
           return false;
         }
+      } else {
+        types[i] = operatorBinding.getOperandType(i);
       }
-      types[i] = operatorBinding.getOperandType(i);
     }
     int prev = -1;
     for (int i : operandList) {
@@ -90,7 +94,7 @@ public class SameOperandTypeExceptLastOperandChecker extends SameOperandTypeChec
     return true;
   }
 
-  public String getAllowedSignatures(SqlOperator op, String opName) {
+  @Override public String getAllowedSignatures(SqlOperator op, String opName) {
     final String typeName = getTypeName();
     if (nOperands == -1) {
       return SqlUtil.getAliasedSignature(op, opName,
@@ -102,5 +106,3 @@ public class SameOperandTypeExceptLastOperandChecker extends SameOperandTypeChec
     }
   }
 }
-
-// End SameOperandTypeExceptLastOperandChecker.java

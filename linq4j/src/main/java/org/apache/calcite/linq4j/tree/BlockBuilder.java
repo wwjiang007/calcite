@@ -262,7 +262,8 @@ public class BlockBuilder {
   }
 
   /**
-   * Prepares declaration for inlining: adds cast
+   * Prepares declaration for inlining, adds cast.
+   *
    * @param decl inlining candidate
    * @return normalized expression
    */
@@ -279,7 +280,8 @@ public class BlockBuilder {
 
   /**
    * Returns the reference to ParameterExpression if given expression was
-   * already computed and stored to local variable
+   * already computed and stored to local variable.
+   *
    * @param expr expression to test
    * @return existing ParameterExpression or null
    */
@@ -486,7 +488,7 @@ public class BlockBuilder {
     int i = 0;
     String candidate = suggestion;
     while (hasVariable(candidate)) {
-      candidate = suggestion + (i++);
+      candidate = suggestion + i++;
     }
     return candidate;
   }
@@ -600,5 +602,3 @@ public class BlockBuilder {
     private int count;
   }
 }
-
-// End BlockBuilder.java

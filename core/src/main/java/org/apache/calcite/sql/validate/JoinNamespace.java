@@ -38,7 +38,7 @@ class JoinNamespace extends AbstractNamespace {
 
   //~ Methods ----------------------------------------------------------------
 
-  protected RelDataType validateImpl(RelDataType targetRowType) {
+  @Override protected RelDataType validateImpl(RelDataType targetRowType) {
     RelDataType leftType =
         validator.getNamespace(join.getLeft()).getRowType();
     RelDataType rightType =
@@ -55,13 +55,13 @@ class JoinNamespace extends AbstractNamespace {
       leftType = typeFactory.createTypeWithNullability(leftType, true);
       rightType = typeFactory.createTypeWithNullability(rightType, true);
       break;
+    default:
+      break;
     }
     return typeFactory.createJoinType(leftType, rightType);
   }
 
-  public SqlNode getNode() {
+  @Override public SqlNode getNode() {
     return join;
   }
 }
-
-// End JoinNamespace.java

@@ -16,12 +16,13 @@
  */
 package org.apache.calcite.sql;
 
-import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.util.SqlVisitor;
 import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorScope;
 import org.apache.calcite.util.Litmus;
+
+import com.google.common.collect.ImmutableList;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -31,6 +32,8 @@ import java.util.List;
 /**
  * A <code>SqlNodeList</code> is a list of {@link SqlNode}s. It is also a
  * {@link SqlNode}, so may appear in a parse tree.
+ *
+ * @see SqlNode#toList()
  */
 public class SqlNodeList extends SqlNode implements Iterable<SqlNode> {
   //~ Static fields/initializers ---------------------------------------------
@@ -40,10 +43,22 @@ public class SqlNodeList extends SqlNode implements Iterable<SqlNode> {
    */
   public static final SqlNodeList EMPTY =
       new SqlNodeList(SqlParserPos.ZERO) {
-        public void add(SqlNode node) {
+        @Override public void add(SqlNode node) {
           throw new UnsupportedOperationException();
         }
       };
+
+  /**
+   * A SqlNodeList that has a single element that is an empty list.
+   */
+  public static final SqlNodeList SINGLETON_EMPTY =
+      new SqlNodeList(ImmutableList.of(EMPTY), SqlParserPos.ZERO);
+
+  /**
+   * A SqlNodeList that has a single element that is a star identifier.
+   */
+  public static final SqlNodeList SINGLETON_STAR =
+      new SqlNodeList(ImmutableList.of(SqlIdentifier.STAR), SqlParserPos.ZERO);
 
   //~ Instance fields --------------------------------------------------------
 
@@ -73,7 +88,7 @@ public class SqlNodeList extends SqlNode implements Iterable<SqlNode> {
   //~ Methods ----------------------------------------------------------------
 
   // implement Iterable<SqlNode>
-  public Iterator<SqlNode> iterator() {
+  @Override public Iterator<SqlNode> iterator() {
     return list.iterator();
   }
 
@@ -85,7 +100,7 @@ public class SqlNodeList extends SqlNode implements Iterable<SqlNode> {
     list.add(node);
   }
 
-  public SqlNodeList clone(SqlParserPos pos) {
+  @Override public SqlNodeList clone(SqlParserPos pos) {
     return new SqlNodeList(list, pos);
   }
 
@@ -101,59 +116,38 @@ public class SqlNodeList extends SqlNode implements Iterable<SqlNode> {
     return list.size();
   }
 
-  public void unparse(
+  @Override public void unparse(
       SqlWriter writer,
       int leftPrec,
       int rightPrec) {
-    final SqlWriter.Frame frame =
-        ((leftPrec > 0) || (rightPrec > 0)) ? writer.startList("(", ")")
-            : writer.startList("", "");
-    commaList(writer);
-    writer.endList(frame);
+    final SqlWriter.FrameTypeEnum frameType =
+        (leftPrec > 0 || rightPrec > 0)
+            ? SqlWriter.FrameTypeEnum.PARENTHESES
+            : SqlWriter.FrameTypeEnum.SIMPLE;
+    writer.list(frameType, SqlWriter.COMMA, this);
   }
 
+  @Deprecated // to be removed before 2.0
   void commaList(SqlWriter writer) {
-    // The precedence of the comma operator if low but not zero. For
-    // instance, this ensures parentheses in
-    //    select x, (select * from foo order by z), y from t
-    for (SqlNode node : list) {
-      writer.sep(",");
-      node.unparse(writer, 2, 3);
-    }
+    unparse(writer, 0, 0);
   }
 
-  void andOrList(SqlWriter writer, SqlKind sepKind) {
-    SqlBinaryOperator sepOp =
-        sepKind == SqlKind.AND
-            ? SqlStdOperatorTable.AND
-            : SqlStdOperatorTable.OR;
-    for (int i = 0; i < list.size(); i++) {
-      SqlNode node = list.get(i);
-      writer.sep(sepKind.name(), false);
-
-      // The precedence pulling on the LHS of a node is the
-      // right-precedence of the separator operator, except at the start
-      // of the list; similarly for the RHS of a node. If the operator
-      // has left precedence 4 and right precedence 5, the precedences
-      // in a 3-node list will look as follows:
-      //   0 <- node1 -> 4  5 <- node2 -> 4  5 <- node3 -> 0
-      int lprec = (i == 0) ? 0 : sepOp.getRightPrec();
-      int rprec = (i == (list.size() - 1)) ? 0 : sepOp.getLeftPrec();
-      node.unparse(writer, lprec, rprec);
-    }
+  @Deprecated // to be removed before 2.0
+  void andOrList(SqlWriter writer, SqlBinaryOperator sepOp) {
+    writer.list(SqlWriter.FrameTypeEnum.WHERE_LIST, sepOp, this);
   }
 
-  public void validate(SqlValidator validator, SqlValidatorScope scope) {
+  @Override public void validate(SqlValidator validator, SqlValidatorScope scope) {
     for (SqlNode child : list) {
       child.validate(validator, scope);
     }
   }
 
-  public <R> R accept(SqlVisitor<R> visitor) {
+  @Override public <R> R accept(SqlVisitor<R> visitor) {
     return visitor.visit(this);
   }
 
-  public boolean equalsDeep(SqlNode node, Litmus litmus) {
+  @Override public boolean equalsDeep(SqlNode node, Litmus litmus) {
     if (!(node instanceof SqlNodeList)) {
       return litmus.fail("{} != {}", this, node);
     }
@@ -207,7 +201,7 @@ public class SqlNodeList extends SqlNode implements Iterable<SqlNode> {
     return list;
   }
 
-  public void validateExpr(SqlValidator validator, SqlValidatorScope scope) {
+  @Override public void validateExpr(SqlValidator validator, SqlValidatorScope scope) {
     // While a SqlNodeList is not always a valid expression, this
     // implementation makes that assumption. It just validates the members
     // of the list.
@@ -226,5 +220,3 @@ public class SqlNodeList extends SqlNode implements Iterable<SqlNode> {
     }
   }
 }
-
-// End SqlNodeList.java

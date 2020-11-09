@@ -35,7 +35,7 @@ public class ThrowStatement extends Statement {
     return shuttle.visit(this, expression);
   }
 
-  public <R> R accept(Visitor<R> visitor) {
+  @Override public <R> R accept(Visitor<R> visitor) {
     return visitor.visit(this);
   }
 
@@ -68,5 +68,3 @@ public class ThrowStatement extends Statement {
     return Objects.hash(nodeType, type, expression);
   }
 }
-
-// End ThrowStatement.java

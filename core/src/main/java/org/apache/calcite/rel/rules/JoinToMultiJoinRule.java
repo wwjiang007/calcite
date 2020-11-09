@@ -16,13 +16,12 @@
  */
 package org.apache.calcite.rel.rules;
 
-import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.plan.RelRule;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
-import org.apache.calcite.rel.core.RelFactories;
 import org.apache.calcite.rel.logical.LogicalJoin;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
@@ -101,33 +100,38 @@ import java.util.Map;
  *
  * @see org.apache.calcite.rel.rules.FilterMultiJoinMergeRule
  * @see org.apache.calcite.rel.rules.ProjectMultiJoinMergeRule
+ * @see CoreRules#JOIN_TO_MULTI_JOIN
  */
-public class JoinToMultiJoinRule extends RelOptRule {
-  public static final JoinToMultiJoinRule INSTANCE =
-      new JoinToMultiJoinRule(LogicalJoin.class, RelFactories.LOGICAL_BUILDER);
+public class JoinToMultiJoinRule
+    extends RelRule<JoinToMultiJoinRule.Config>
+    implements TransformationRule {
 
-  //~ Constructors -----------------------------------------------------------
+  /** Creates a JoinToMultiJoinRule. */
+  protected JoinToMultiJoinRule(Config config) {
+    super(config);
+  }
 
   @Deprecated // to be removed before 2.0
   public JoinToMultiJoinRule(Class<? extends Join> clazz) {
-    this(clazz, RelFactories.LOGICAL_BUILDER);
+    this(Config.DEFAULT.withOperandFor(clazz));
   }
 
-  /**
-   * Creates a JoinToMultiJoinRule.
-   */
-  public JoinToMultiJoinRule(Class<? extends Join> clazz,
+  @Deprecated // to be removed before 2.0
+  public JoinToMultiJoinRule(Class<? extends Join> joinClass,
       RelBuilderFactory relBuilderFactory) {
-    super(
-        operand(clazz,
-            operand(RelNode.class, any()),
-            operand(RelNode.class, any())),
-        relBuilderFactory, null);
+    this(Config.DEFAULT.withRelBuilderFactory(relBuilderFactory)
+        .as(Config.class)
+        .withOperandFor(joinClass));
   }
 
   //~ Methods ----------------------------------------------------------------
 
-  public void onMatch(RelOptRuleCall call) {
+  @Override public boolean matches(RelOptRuleCall call) {
+    final Join origJoin = call.rel(0);
+    return origJoin.getJoinType().projectsRight();
+  }
+
+  @Override public void onMatch(RelOptRuleCall call) {
     final Join origJoin = call.rel(0);
     final RelNode left = call.rel(1);
     final RelNode right = call.rel(2);
@@ -260,7 +264,7 @@ public class JoinToMultiJoinRule extends RelOptRule {
    */
   private void combineOuterJoins(
       Join joinRel,
-      List<RelNode> combinedInputs,
+      @SuppressWarnings("unused") List<RelNode> combinedInputs,
       RelNode left,
       RelNode right,
       List<Pair<JoinRelType, RexNode>> joinSpecs) {
@@ -374,25 +378,25 @@ public class JoinToMultiJoinRule extends RelOptRule {
    * Combines the join filters from the left and right inputs (if they are
    * MultiJoinRels) with the join filter in the joinrel into a single AND'd
    * join filter, unless the inputs correspond to null generating inputs in an
-   * outer join
+   * outer join.
    *
-   * @param joinRel join rel
-   * @param left    left child of the join
-   * @param right   right child of the join
+   * @param join    Join
+   * @param left    Left input of the join
+   * @param right   Right input of the join
    * @return combined join filters AND-ed together
    */
   private List<RexNode> combineJoinFilters(
-      Join joinRel,
+      Join join,
       RelNode left,
       RelNode right) {
-    JoinRelType joinType = joinRel.getJoinType();
+    JoinRelType joinType = join.getJoinType();
 
     // AND the join condition if this isn't a left or right outer join;
     // in those cases, the outer join condition is already tracked
     // separately
     final List<RexNode> filters = new ArrayList<>();
     if ((joinType != JoinRelType.LEFT) && (joinType != JoinRelType.RIGHT)) {
-      filters.add(joinRel.getCondition());
+      filters.add(join.getCondition());
     }
     if (canCombine(left, joinType.generatesNullsOnLeft())) {
       filters.add(((MultiJoin) left).getJoinFilter());
@@ -402,7 +406,7 @@ public class JoinToMultiJoinRule extends RelOptRule {
     if (canCombine(right, joinType.generatesNullsOnRight())) {
       MultiJoin multiJoin = (MultiJoin) right;
       filters.add(
-          shiftRightFilter(joinRel, left, multiJoin,
+          shiftRightFilter(join, left, multiJoin,
               multiJoin.getJoinFilter()));
     }
 
@@ -552,7 +556,7 @@ public class JoinToMultiJoinRule extends RelOptRule {
   /**
    * Visitor that keeps a reference count of the inputs used by an expression.
    */
-  private class InputReferenceCounter extends RexVisitorImpl<Void> {
+  private static class InputReferenceCounter extends RexVisitorImpl<Void> {
     private final int[] refCounts;
 
     InputReferenceCounter(int[] refCounts) {
@@ -560,11 +564,28 @@ public class JoinToMultiJoinRule extends RelOptRule {
       this.refCounts = refCounts;
     }
 
-    public Void visitInputRef(RexInputRef inputRef) {
+    @Override public Void visitInputRef(RexInputRef inputRef) {
       refCounts[inputRef.getIndex()]++;
       return null;
     }
   }
-}
 
-// End JoinToMultiJoinRule.java
+  /** Rule configuration. */
+  public interface Config extends RelRule.Config {
+    Config DEFAULT = EMPTY.as(Config.class)
+        .withOperandFor(LogicalJoin.class);
+
+    @Override default JoinToMultiJoinRule toRule() {
+      return new JoinToMultiJoinRule(this);
+    }
+
+    /** Defines an operand tree for the given classes. */
+    default Config withOperandFor(Class<? extends Join> joinClass) {
+      return withOperandSupplier(b0 ->
+          b0.operand(joinClass).inputs(
+              b1 -> b1.operand(RelNode.class).anyInputs(),
+              b2 -> b2.operand(RelNode.class).anyInputs()))
+          .as(Config.class);
+    }
+  }
+}

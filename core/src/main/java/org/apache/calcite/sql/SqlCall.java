@@ -40,7 +40,7 @@ import javax.annotation.Nonnull;
 public abstract class SqlCall extends SqlNode {
   //~ Constructors -----------------------------------------------------------
 
-  public SqlCall(SqlParserPos pos) {
+  protected SqlCall(SqlParserPos pos) {
     super(pos);
   }
 
@@ -83,12 +83,11 @@ public abstract class SqlCall extends SqlNode {
   }
 
   @Override public SqlNode clone(SqlParserPos pos) {
-    final List<SqlNode> operandList = getOperandList();
     return getOperator().createCall(getFunctionQuantifier(), pos,
-        operandList.toArray(new SqlNode[0]));
+        getOperandList());
   }
 
-  public void unparse(
+  @Override public void unparse(
       SqlWriter writer,
       int leftPrec,
       int rightPrec) {
@@ -112,11 +111,11 @@ public abstract class SqlCall extends SqlNode {
    * {@link SqlOperator#validateCall}. Derived classes may override (as do,
    * for example {@link SqlSelect} and {@link SqlUpdate}).
    */
-  public void validate(SqlValidator validator, SqlValidatorScope scope) {
+  @Override public void validate(SqlValidator validator, SqlValidatorScope scope) {
     validator.validateCall(this, scope);
   }
 
-  public void findValidOptions(
+  @Override public void findValidOptions(
       SqlValidator validator,
       SqlValidatorScope scope,
       SqlParserPos pos,
@@ -135,11 +134,11 @@ public abstract class SqlCall extends SqlNode {
     // no valid options
   }
 
-  public <R> R accept(SqlVisitor<R> visitor) {
+  @Override public <R> R accept(SqlVisitor<R> visitor) {
     return visitor.visit(this);
   }
 
-  public boolean equalsDeep(SqlNode node, Litmus litmus) {
+  @Override public boolean equalsDeep(SqlNode node, Litmus litmus) {
     if (node == this) {
       return true;
     }
@@ -175,7 +174,7 @@ public abstract class SqlCall extends SqlNode {
     return SqlUtil.getOperatorSignature(getOperator(), signatureList);
   }
 
-  public SqlMonotonicity getMonotonicity(SqlValidatorScope scope) {
+  @Override public SqlMonotonicity getMonotonicity(SqlValidatorScope scope) {
     // Delegate to operator.
     final SqlCallBinding binding =
         new SqlCallBinding(scope.getValidator(), scope, this);
@@ -183,9 +182,9 @@ public abstract class SqlCall extends SqlNode {
   }
 
   /**
-   * Test to see if it is the function COUNT(*)
+   * Returns whether it is the function {@code COUNT(*)}.
    *
-   * @return boolean true if function call to COUNT(*)
+   * @return true if function call to COUNT(*)
    */
   public boolean isCountStar() {
     SqlOperator sqlOperator = getOperator();
@@ -207,5 +206,3 @@ public abstract class SqlCall extends SqlNode {
     return null;
   }
 }
-
-// End SqlCall.java

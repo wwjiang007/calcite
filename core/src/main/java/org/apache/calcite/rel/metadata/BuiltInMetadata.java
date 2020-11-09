@@ -18,6 +18,7 @@ package org.apache.calcite.rel.metadata;
 
 import org.apache.calcite.plan.RelOptCost;
 import org.apache.calcite.plan.RelOptPredicateList;
+import org.apache.calcite.plan.volcano.VolcanoPlanner;
 import org.apache.calcite.rel.RelCollation;
 import org.apache.calcite.rel.RelDistribution;
 import org.apache.calcite.rel.RelNode;
@@ -498,8 +499,10 @@ public abstract class BuiltInMetadata {
     /**
      * Estimates the cost of executing a relational expression, not counting the
      * cost of its inputs. (However, the non-cumulative cost is still usually
-     * dependent on the row counts of the inputs.) The default implementation
-     * for this query asks the rel itself via {@link RelNode#computeSelfCost},
+     * dependent on the row counts of the inputs.)
+     *
+     * <p>The default implementation for this query asks the rel itself via
+     * {@link RelNode#computeSelfCost(RelOptPlanner, RelMetadataQuery)},
      * but metadata providers can override this with their own cost models.
      *
      * @return estimated cost, or null if no reliable estimate can be
@@ -619,6 +622,21 @@ public abstract class BuiltInMetadata {
     }
   }
 
+  /** Metadata to get the lower bound cost of a RelNode. */
+  public interface LowerBoundCost extends Metadata {
+    MetadataDef<LowerBoundCost> DEF = MetadataDef.of(LowerBoundCost.class,
+        LowerBoundCost.Handler.class, BuiltInMethod.LOWER_BOUND_COST.method);
+
+    /** Returns the lower bound cost of a RelNode. */
+    RelOptCost getLowerBoundCost(VolcanoPlanner planner);
+
+    /** Handler API. */
+    interface Handler extends MetadataHandler<LowerBoundCost> {
+      RelOptCost getLowerBoundCost(
+          RelNode r, RelMetadataQuery mq, VolcanoPlanner planner);
+    }
+  }
+
   /** Metadata about the memory use of an operator. */
   public interface Memory extends Metadata {
     MetadataDef<Memory> DEF = MetadataDef.of(Memory.class,
@@ -673,5 +691,3 @@ public abstract class BuiltInMetadata {
       ExpressionLineage, TableReferences, NodeTypes {
   }
 }
-
-// End BuiltInMetadata.java

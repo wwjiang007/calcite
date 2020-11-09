@@ -42,6 +42,8 @@ import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.util.ControlFlowException;
 import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Pair;
+import org.apache.calcite.util.RangeSets;
+import org.apache.calcite.util.Sarg;
 import org.apache.calcite.util.Util;
 import org.apache.calcite.util.mapping.Mappings;
 
@@ -49,6 +51,9 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Range;
+
+import org.apiguardian.api.API;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -62,6 +67,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+
 
 /**
  * Utility methods concerning row-expressions.
@@ -92,7 +99,7 @@ public class RexUtil {
   }
 
   /**
-   * Generates a cast from one row type to another
+   * Generates a cast from one row type to another.
    *
    * @param rexBuilder RexBuilder to use for constructing casts
    * @param lhsRowType target row type
@@ -280,6 +287,8 @@ public class RexUtil {
       final RexNode arg0 = call.getOperands().get(0);
       return SqlTypeUtil.equalSansNullability(typeFactory, arg0.getType(),
           call.getType());
+    default:
+      break;
     }
     return false;
   }
@@ -293,6 +302,21 @@ public class RexUtil {
       node = ((RexCall) node).operands.get(0);
     }
     return node;
+  }
+
+  /** Removes any casts.
+   *
+   * <p>For example, {@code CAST('1' AS INTEGER)} becomes {@code '1'}. */
+  public static RexNode removeCast(RexNode e) {
+    for (;;) {
+      switch (e.getKind()) {
+      case CAST:
+        e = ((RexCall) e).operands.get(0);
+        break;
+      default:
+        return e;
+      }
+    }
   }
 
   /** Creates a map containing each (e, constant) pair that occurs within
@@ -406,7 +430,7 @@ public class RexUtil {
         // Convert "CAST(c) = literal" to "c = literal", as long as it is a
         // widening cast.
         final RexNode operand = ((RexCall) left).getOperands().get(0);
-        if (canAssignFrom(left.getType(), operand.getType())) {
+        if (canAssignFrom(left.getType(), operand.getType(), rexBuilder.getTypeFactory())) {
           final RexNode castRight =
               rexBuilder.makeCast(operand.getType(), constant);
           if (castRight instanceof RexLiteral) {
@@ -414,6 +438,9 @@ public class RexUtil {
             constant = clazz.cast(castRight);
           }
         }
+        break;
+      default:
+        break;
       }
       map.put(left, constant);
     } else {
@@ -438,18 +465,168 @@ public class RexUtil {
    *   <li>{@code canAssignFrom(BIGINT, VARCHAR)} returns {@code false}</li>
    * </ul>
    */
-  private static boolean canAssignFrom(RelDataType type1, RelDataType type2) {
+  private static boolean canAssignFrom(RelDataType type1, RelDataType type2,
+      RelDataTypeFactory typeFactory) {
     final SqlTypeName name1 = type1.getSqlTypeName();
     final SqlTypeName name2 = type2.getSqlTypeName();
     if (name1.getFamily() == name2.getFamily()) {
       switch (name1.getFamily()) {
       case NUMERIC:
-        return name1.compareTo(name2) >= 0;
+        if (SqlTypeUtil.isExactNumeric(type1)
+            && SqlTypeUtil.isExactNumeric(type2)) {
+          int precision1;
+          int scale1;
+          if (name1 == SqlTypeName.DECIMAL) {
+            type1 = typeFactory.decimalOf(type1);
+            precision1 = type1.getPrecision();
+            scale1 = type1.getScale();
+          } else {
+            precision1 = typeFactory.getTypeSystem().getMaxPrecision(name1);
+            scale1 = typeFactory.getTypeSystem().getMaxScale(name1);
+          }
+          int precision2;
+          int scale2;
+          if (name2 == SqlTypeName.DECIMAL) {
+            type2 = typeFactory.decimalOf(type2);
+            precision2 = type2.getPrecision();
+            scale2 = type2.getScale();
+          } else {
+            precision2 = typeFactory.getTypeSystem().getMaxPrecision(name2);
+            scale2 = typeFactory.getTypeSystem().getMaxScale(name2);
+          }
+          return precision1 >= precision2
+              && scale1 >= scale2;
+        } else if (SqlTypeUtil.isApproximateNumeric(type1)
+            && SqlTypeUtil.isApproximateNumeric(type2)) {
+          return type1.getPrecision() >= type2.getPrecision()
+              && type1.getScale() >= type2.getScale();
+        }
+        break;
       default:
-        return true;
+        // getPrecision() will return:
+        // - number of decimal digits for fractional seconds for datetime types
+        // - length in characters for character types
+        // - length in bytes for binary types
+        // - RelDataType.PRECISION_NOT_SPECIFIED (-1) if not applicable for this type
+        return type1.getPrecision() >= type2.getPrecision();
       }
     }
     return false;
+  }
+
+  /** Returns the number of nodes (including leaves) in a list of
+   * expressions.
+   *
+   * @see RexNode#nodeCount() */
+  public static int nodeCount(List<? extends RexNode> nodes) {
+    return nodeCount(0, nodes);
+  }
+
+  static int nodeCount(int n, List<? extends RexNode> nodes) {
+    for (RexNode operand : nodes) {
+      n += operand.nodeCount();
+    }
+    return n;
+  }
+
+  /** Returns a visitor that finds nodes of a given {@link SqlKind}. */
+  public static RexFinder find(final SqlKind kind) {
+    return new RexFinder() {
+      @Override public Void visitCall(RexCall call) {
+        if (call.getKind() == kind) {
+          throw Util.FoundOne.NULL;
+        }
+        return super.visitCall(call);
+      }
+    };
+  }
+
+  /** Returns a visitor that finds nodes of given {@link SqlKind}s. */
+  public static RexFinder find(final Set<SqlKind> kinds) {
+    return new RexFinder() {
+      @Override public Void visitCall(RexCall call) {
+        if (kinds.contains(call.getKind())) {
+          throw Util.FoundOne.NULL;
+        }
+        return super.visitCall(call);
+      }
+    };
+  }
+
+  /** Returns a visitor that finds a particular {@link RexInputRef}. */
+  public static RexFinder find(final RexInputRef ref) {
+    return new RexFinder() {
+      @Override public Void visitInputRef(RexInputRef inputRef) {
+        if (ref.equals(inputRef)) {
+          throw Util.FoundOne.NULL;
+        }
+        return super.visitInputRef(inputRef);
+      }
+    };
+  }
+
+  /** Expands calls to {@link SqlStdOperatorTable#SEARCH} in an expression. */
+  public static RexNode expandSearch(RexBuilder rexBuilder,
+      @Nullable RexProgram program, RexNode node) {
+    return node.accept(searchShuttle(rexBuilder, program, -1));
+  }
+
+  /** Creates a shuttle that expands calls to
+   * {@link SqlStdOperatorTable#SEARCH}.
+   *
+   * <p>If {@code maxComplexity} is non-negative, a {@link Sarg} whose
+   * complexity is greater than {@code maxComplexity} is retained (not
+   * expanded); this gives a means to simplify simple expressions such as
+   * {@code x IS NULL} or {@code x > 10} while keeping more complex expressions
+   * such as {@code x IN (3, 5, 7) OR x IS NULL} as a Sarg. */
+  public static RexShuttle searchShuttle(RexBuilder rexBuilder,
+      RexProgram program, int maxComplexity) {
+    return new SearchExpandingShuttle(program, rexBuilder, maxComplexity);
+  }
+
+  @SuppressWarnings("BetaApi")
+  private static <C extends Comparable<C>> RexNode sargRef(
+      RexBuilder rexBuilder, RexNode ref, Sarg<C> sarg, RelDataType type) {
+    if (sarg.isAll()) {
+      if (sarg.containsNull) {
+        return rexBuilder.makeLiteral(true);
+      } else {
+        return rexBuilder.makeCall(SqlStdOperatorTable.IS_NOT_NULL, ref);
+      }
+    }
+    final List<RexNode> orList = new ArrayList<>();
+    if (sarg.containsNull) {
+      orList.add(rexBuilder.makeCall(SqlStdOperatorTable.IS_NULL, ref));
+    }
+    if (sarg.isPoints()) {
+      // Generate 'ref = value1 OR ... OR ref = valueN'
+      sarg.rangeSet.asRanges().forEach(range ->
+          orList.add(
+              rexBuilder.makeCall(SqlStdOperatorTable.EQUALS, ref,
+                  rexBuilder.makeLiteral(range.lowerEndpoint(),
+                      type, true, true))));
+    } else if (sarg.isComplementedPoints()) {
+      // Generate 'ref <> value1 AND ... AND ref <> valueN'
+      final List<RexNode> list = sarg.rangeSet.complement().asRanges().stream()
+          .map(range ->
+              rexBuilder.makeCall(SqlStdOperatorTable.NOT_EQUALS, ref,
+                  rexBuilder.makeLiteral(range.lowerEndpoint(),
+                      type, true, true)))
+          .collect(Util.toImmutableList());
+      orList.add(composeConjunction(rexBuilder, list));
+    } else {
+      final RangeSets.Consumer<C> consumer =
+          new RangeToRex<>(ref, orList, rexBuilder, type);
+      RangeSets.forEach(sarg.rangeSet, consumer);
+    }
+    return composeDisjunction(rexBuilder, orList);
+  }
+
+  private static RexNode deref(RexProgram program, RexNode node) {
+    while (node instanceof RexLocalRef) {
+      node = program.getExprList().get(((RexLocalRef) node).index);
+    }
+    return node;
   }
 
   /**
@@ -458,23 +635,23 @@ public class RexUtil {
   static class ConstantFinder implements RexVisitor<Boolean> {
     static final ConstantFinder INSTANCE = new ConstantFinder();
 
-    public Boolean visitLiteral(RexLiteral literal) {
+    @Override public Boolean visitLiteral(RexLiteral literal) {
       return true;
     }
 
-    public Boolean visitInputRef(RexInputRef inputRef) {
+    @Override public Boolean visitInputRef(RexInputRef inputRef) {
       return false;
     }
 
-    public Boolean visitLocalRef(RexLocalRef localRef) {
+    @Override public Boolean visitLocalRef(RexLocalRef localRef) {
       return false;
     }
 
-    public Boolean visitOver(RexOver over) {
+    @Override public Boolean visitOver(RexOver over) {
       return false;
     }
 
-    public Boolean visitSubQuery(RexSubQuery subQuery) {
+    @Override public Boolean visitSubQuery(RexSubQuery subQuery) {
       return false;
     }
 
@@ -486,30 +663,31 @@ public class RexUtil {
       return false;
     }
 
-    public Boolean visitCorrelVariable(RexCorrelVariable correlVariable) {
+    @Override public Boolean visitCorrelVariable(RexCorrelVariable correlVariable) {
       // Correlating variables change when there is an internal restart.
       // Not good enough for our purposes.
       return false;
     }
 
-    public Boolean visitDynamicParam(RexDynamicParam dynamicParam) {
+    @Override public Boolean visitDynamicParam(RexDynamicParam dynamicParam) {
       // Dynamic parameters are constant WITHIN AN EXECUTION, so that's
       // good enough.
       return true;
     }
 
-    public Boolean visitCall(RexCall call) {
-      // Constant if operator is deterministic and all operands are
-      // constant.
+    @Override public Boolean visitCall(RexCall call) {
+      // Constant if operator meets the following conditions:
+      // 1. It is deterministic;
+      // 2. All its operands are constant.
       return call.getOperator().isDeterministic()
           && RexVisitorImpl.visitArrayAnd(this, call.getOperands());
     }
 
-    public Boolean visitRangeRef(RexRangeRef rangeRef) {
+    @Override public Boolean visitRangeRef(RexRangeRef rangeRef) {
       return false;
     }
 
-    public Boolean visitFieldAccess(RexFieldAccess fieldAccess) {
+    @Override public Boolean visitFieldAccess(RexFieldAccess fieldAccess) {
       // "<expr>.FIELD" is constant iff "<expr>" is constant.
       return fieldAccess.getReferenceExpr().accept(this);
     }
@@ -561,7 +739,7 @@ public class RexUtil {
   }
 
    /**
-   * Returns whether a given node contains a RexCall with a specified operator
+   * Returns whether a given node contains a RexCall with a specified operator.
    *
    * @param operator Operator to look for
    * @param node     a RexNode tree
@@ -572,7 +750,7 @@ public class RexUtil {
     try {
       RexVisitor<Void> visitor =
           new RexVisitorImpl<Void>(true) {
-            public Void visitCall(RexCall call) {
+            @Override public Void visitCall(RexCall call) {
               if (call.getOperator().equals(operator)) {
                 throw new Util.FoundOne(call);
               }
@@ -597,7 +775,7 @@ public class RexUtil {
     try {
       RexVisitor<Void> visitor =
           new RexVisitorImpl<Void>(true) {
-            public Void visitInputRef(RexInputRef inputRef) {
+            @Override public Void visitInputRef(RexInputRef inputRef) {
               throw new Util.FoundOne(inputRef);
             }
           };
@@ -619,7 +797,7 @@ public class RexUtil {
     try {
       RexVisitor<Void> visitor =
           new RexVisitorImpl<Void>(true) {
-            public Void visitFieldAccess(RexFieldAccess fieldAccess) {
+            @Override public Void visitFieldAccess(RexFieldAccess fieldAccess) {
               throw new Util.FoundOne(fieldAccess);
             }
           };
@@ -698,7 +876,7 @@ public class RexUtil {
   }
 
   /**
-   * Determines whether any operand of a set requires decimal expansion
+   * Determines whether any operand of a set requires decimal expansion.
    */
   public static boolean requiresDecimalExpansion(
       List<RexNode> operands,
@@ -849,7 +1027,7 @@ public class RexUtil {
     try {
       RexVisitor<Void> visitor =
           new RexVisitorImpl<Void>(true) {
-            public Void visitTableInputRef(RexTableInputRef inputRef) {
+            @Override public Void visitTableInputRef(RexTableInputRef inputRef) {
               throw new Util.FoundOne(inputRef);
             }
           };
@@ -1235,7 +1413,11 @@ public class RexUtil {
       List<RelFieldCollation> fieldCollations) {
     final List<RelFieldCollation> newFieldCollations = new ArrayList<>();
     for (RelFieldCollation fieldCollation : fieldCollations) {
-      newFieldCollations.add(apply(mapping, fieldCollation));
+      RelFieldCollation newFieldCollation = apply(mapping, fieldCollation);
+      if (newFieldCollation == null) {
+        break;
+      }
+      newFieldCollations.add(newFieldCollation);
     }
     return newFieldCollations;
   }
@@ -1250,10 +1432,9 @@ public class RexUtil {
   /**
    * Applies a mapping to an iterable over expressions.
    */
-  public static Iterable<RexNode> apply(Mappings.TargetMapping mapping,
+  public static List<RexNode> apply(Mappings.TargetMapping mapping,
       Iterable<? extends RexNode> nodes) {
-    final RexPermuteInputsShuttle shuttle = RexPermuteInputsShuttle.of(mapping);
-    return Iterables.transform(nodes, e -> e.accept(shuttle));
+    return RexPermuteInputsShuttle.of(mapping).visitList(nodes);
   }
 
   /**
@@ -1392,14 +1573,34 @@ public class RexUtil {
    *
    * <p>The implementation of this method does not return false positives.
    * However, it is not complete.
+   * @param node input node to verify if it represents a loss-less cast
+   * @return true iff the node is a loss-less cast
    */
   public static boolean isLosslessCast(RexNode node) {
     if (!node.isA(SqlKind.CAST)) {
       return false;
     }
-    final RelDataType source = ((RexCall) node).getOperands().get(0).getType();
+    return isLosslessCast(((RexCall) node).getOperands().get(0).getType(), node.getType());
+  }
+
+
+  /**
+   * Returns whether the conversion from {@code source} to {@code target} type
+   * is a 'loss-less' cast, that is, a cast from which
+   * the original value of the field can be certainly recovered.
+   *
+   * <p>For instance, int &rarr; bigint is loss-less (as you can cast back to
+   * int without loss of information), but bigint &rarr; int is not loss-less.
+   *
+   * <p>The implementation of this method does not return false positives.
+   * However, it is not complete.
+   * @param source source type
+   * @param target target type
+   * @return true iff the conversion is a loss-less cast
+   */
+  @API(since = "1.22", status = API.Status.EXPERIMENTAL)
+  public static boolean isLosslessCast(RelDataType source, RelDataType target) {
     final SqlTypeName sourceSqlTypeName = source.getSqlTypeName();
-    final RelDataType target = node.getType();
     final SqlTypeName targetSqlTypeName = target.getSqlTypeName();
     // 1) Both INT numeric types
     if (SqlTypeFamily.INTEGER.getTypeNames().contains(sourceSqlTypeName)
@@ -1554,8 +1755,8 @@ public class RexUtil {
   /**
    * Shifts every {@link RexInputRef} in an expression by {@code offset}.
    */
-  public static Iterable<RexNode> shift(Iterable<RexNode> nodes, int offset) {
-    return new RexShiftShuttle(offset).apply(nodes);
+  public static List<RexNode> shift(Iterable<RexNode> nodes, int offset) {
+    return new RexShiftShuttle(offset).visitList(nodes);
   }
 
   /**
@@ -1622,11 +1823,11 @@ public class RexUtil {
 
   /** Transforms a list of expressions into a list of their types. */
   public static List<RelDataType> types(List<? extends RexNode> nodes) {
-    return Lists.transform(nodes, RexNode::getType);
+    return Util.transform(nodes, RexNode::getType);
   }
 
   public static List<RelDataTypeFamily> families(List<RelDataType> types) {
-    return Lists.transform(types, RelDataType::getFamily);
+    return Util.transform(types, RelDataType::getFamily);
   }
 
   /** Removes all expressions from a list that are equivalent to a given
@@ -1822,6 +2023,8 @@ public class RexUtil {
     case GREATER_THAN_OR_EQUAL:
       final SqlOperator op = op(call.getKind().negateNullSafe());
       return rexBuilder.makeCall(op, call.getOperands());
+    default:
+      break;
     }
     return null;
   }
@@ -1836,6 +2039,8 @@ public class RexUtil {
     case GREATER_THAN_OR_EQUAL:
       final SqlOperator op = op(call.getKind().reverse());
       return rexBuilder.makeCall(op, Lists.reverse(call.getOperands()));
+    default:
+      break;
     }
     return null;
   }
@@ -1850,7 +2055,7 @@ public class RexUtil {
   public static RexNode simplifyOrs(RexBuilder rexBuilder,
       List<RexNode> terms) {
     return new RexSimplify(rexBuilder, RelOptPredicateList.EMPTY, EXECUTOR)
-        .simplifyUnknownAs(rexBuilder.makeCall(SqlStdOperatorTable.OR, terms),
+        .simplifyUnknownAs(RexUtil.composeDisjunction(rexBuilder, terms),
             RexUnknownAs.UNKNOWN);
   }
 
@@ -1893,14 +2098,20 @@ public class RexUtil {
                           .equals(call2.getOperands().get(1))) {
                   return false;
                 }
+                break;
+              default:
+                break;
               }
               return true;
             });
       }
+      break;
+    default:
+      break;
     }
     return composeConjunction(rexBuilder,
         Iterables.concat(ImmutableList.of(e),
-            Iterables.transform(notTerms, e2 -> not(rexBuilder, e2))));
+            Util.transform(notTerms, e2 -> not(rexBuilder, e2))));
   }
 
   /** Returns whether a given operand of a CASE expression is a predicate.
@@ -1939,7 +2150,7 @@ public class RexUtil {
    *
    * @deprecated Use {@link #not} */
   @SuppressWarnings("Guava")
-  @Deprecated // to be removed in 2.0
+  @Deprecated // to be removed before 2.0
   public static com.google.common.base.Function<RexNode, RexNode> notFn(
       final RexBuilder rexBuilder) {
     return e -> not(rexBuilder, e);
@@ -2053,16 +2264,12 @@ public class RexUtil {
    */
   public static Set<RelTableRef> gatherTableReferences(final List<RexNode> nodes) {
     final Set<RelTableRef> occurrences = new HashSet<>();
-    RexVisitor<Void> visitor =
-        new RexVisitorImpl<Void>(true) {
-          @Override public Void visitTableInputRef(RexTableInputRef ref) {
-            occurrences.add(ref.getTableRef());
-            return super.visitTableInputRef(ref);
-          }
-        };
-    for (RexNode e : nodes) {
-      e.accept(visitor);
-    }
+    new RexVisitorImpl<Void>(true) {
+      @Override public Void visitTableInputRef(RexTableInputRef ref) {
+        occurrences.add(ref.getTableRef());
+        return super.visitTableInputRef(ref);
+      }
+    }.visitEach(nodes);
     return occurrences;
   }
 
@@ -2092,19 +2299,19 @@ public class RexUtil {
       return map.get(expr);
     }
 
-    public RexNode visitInputRef(RexInputRef inputRef) {
+    @Override public RexNode visitInputRef(RexInputRef inputRef) {
       return register(inputRef);
     }
 
-    public RexNode visitLiteral(RexLiteral literal) {
+    @Override public RexNode visitLiteral(RexLiteral literal) {
       return register(literal);
     }
 
-    public RexNode visitCorrelVariable(RexCorrelVariable correlVariable) {
+    @Override public RexNode visitCorrelVariable(RexCorrelVariable correlVariable) {
       return register(correlVariable);
     }
 
-    public RexNode visitCall(RexCall call) {
+    @Override public RexNode visitCall(RexCall call) {
       List<RexNode> normalizedOperands = new ArrayList<>();
       int diffCount = 0;
       for (RexNode operand : call.getOperands()) {
@@ -2124,15 +2331,15 @@ public class RexUtil {
       return register(call);
     }
 
-    public RexNode visitDynamicParam(RexDynamicParam dynamicParam) {
+    @Override public RexNode visitDynamicParam(RexDynamicParam dynamicParam) {
       return register(dynamicParam);
     }
 
-    public RexNode visitRangeRef(RexRangeRef rangeRef) {
+    @Override public RexNode visitRangeRef(RexRangeRef rangeRef) {
       return register(rangeRef);
     }
 
-    public RexNode visitFieldAccess(RexFieldAccess fieldAccess) {
+    @Override public RexNode visitFieldAccess(RexFieldAccess fieldAccess) {
       final RexNode expr = fieldAccess.getReferenceExpr();
       expr.accept(this);
       final RexNode normalizedExpr = lookup(expr);
@@ -2170,7 +2377,7 @@ public class RexUtil {
       this.inputRowType = inputRowType;
     }
 
-    public Void visitInputRef(RexInputRef inputRef) {
+    @Override public Void visitInputRef(RexInputRef inputRef) {
       super.visitInputRef(inputRef);
       if (inputRef.getIndex() >= inputRowType.getFieldCount()) {
         throw new IllegalForwardRefException();
@@ -2178,7 +2385,7 @@ public class RexUtil {
       return null;
     }
 
-    public Void visitLocalRef(RexLocalRef inputRef) {
+    @Override public Void visitLocalRef(RexLocalRef inputRef) {
       super.visitLocalRef(inputRef);
       if (inputRef.getIndex() >= limit) {
         throw new IllegalForwardRefException();
@@ -2207,15 +2414,13 @@ public class RexUtil {
       fieldAccessList = new ArrayList<>();
     }
 
-    public Void visitFieldAccess(RexFieldAccess fieldAccess) {
+    @Override public Void visitFieldAccess(RexFieldAccess fieldAccess) {
       fieldAccessList.add(fieldAccess);
       return null;
     }
 
-    public Void visitCall(RexCall call) {
-      for (RexNode operand : call.operands) {
-        operand.accept(this);
-      }
+    @Override public Void visitCall(RexCall call) {
+      visitEach(call.operands);
       return null;
     }
 
@@ -2289,11 +2494,11 @@ public class RexUtil {
         case OR:
           operands = ((RexCall) arg).getOperands();
           return toCnf2(
-              and(Lists.transform(flattenOr(operands), RexUtil::addNot)));
+              and(Util.transform(flattenOr(operands), RexUtil::addNot)));
         case AND:
           operands = ((RexCall) arg).getOperands();
           return toCnf2(
-              or(Lists.transform(flattenAnd(operands), RexUtil::addNot)));
+              or(Util.transform(flattenAnd(operands), RexUtil::addNot)));
         default:
           incrementAndCheck();
           return rex;
@@ -2392,7 +2597,7 @@ public class RexUtil {
 
   /** Transforms a list of expressions to the list of digests. */
   public static List<String> strings(List<RexNode> list) {
-    return Lists.transform(list, Object::toString);
+    return Util.transform(list, Object::toString);
   }
 
   /** Helps {@link org.apache.calcite.rex.RexUtil#toDnf}. */
@@ -2432,11 +2637,11 @@ public class RexUtil {
         case OR:
           operands = ((RexCall) arg).getOperands();
           return toDnf(
-              and(Lists.transform(flattenOr(operands), RexUtil::addNot)));
+              and(Util.transform(flattenOr(operands), RexUtil::addNot)));
         case AND:
           operands = ((RexCall) arg).getOperands();
           return toDnf(
-              or(Lists.transform(flattenAnd(operands), RexUtil::addNot)));
+              or(Util.transform(flattenAnd(operands), RexUtil::addNot)));
         default:
           return rex;
         }
@@ -2513,13 +2718,13 @@ public class RexUtil {
     @Override public RexNode visitInputRef(RexInputRef ref) {
       final RelDataType rightType = typeList.get(ref.getIndex());
       final RelDataType refType = ref.getType();
-      if (refType == rightType) {
+      if (refType.equals(rightType)) {
         return ref;
       }
       final RelDataType refType2 =
           rexBuilder.getTypeFactory().createTypeWithNullability(refType,
               rightType.isNullable());
-      if (refType2 == rightType) {
+      if (refType2.equals(rightType)) {
         return new RexInputRef(ref.getIndex(), refType2);
       }
       throw new AssertionError("mismatched type " + ref + " " + rightType);
@@ -2650,6 +2855,9 @@ public class RexUtil {
         for (RexNode operand : call.operands) {
           this.unknownAsMap.put(operand, unknownAs);
         }
+        break;
+      default:
+        break;
       }
       RexNode node = super.visitCall(call);
       RexNode simplifiedNode = simplify.simplify(node, unknownAs);
@@ -2662,6 +2870,159 @@ public class RexUtil {
       return simplify.rexBuilder.makeCast(call.getType(), simplifiedNode, matchNullability);
     }
   }
-}
 
-// End RexUtil.java
+  /** Visitor that tells whether a node matching a particular description exists
+   * in a tree. */
+  public abstract static class RexFinder extends RexVisitorImpl<Void> {
+    RexFinder() {
+      super(true);
+    }
+
+    /** Returns whether a {@link Project} contains the kind of expression we
+     * seek. */
+    public boolean inProject(Project project) {
+      return anyContain(project.getProjects());
+    }
+
+    /** Returns whether a {@link Filter} contains the kind of expression we
+     * seek. */
+    public boolean inFilter(Filter filter) {
+      return contains(filter.getCondition());
+    }
+
+    /** Returns whether a {@link Join} contains kind of expression we seek. */
+    public boolean inJoin(Join join) {
+      return contains(join.getCondition());
+    }
+
+    /** Returns whether the given expression contains what this RexFinder
+     * seeks. */
+    public boolean contains(RexNode node) {
+      try {
+        node.accept(RexFinder.this);
+        return false;
+      } catch (Util.FoundOne e) {
+        return true;
+      }
+    }
+
+    /** Returns whether any of the given expressions contain what this RexFinder
+     * seeks. */
+    public boolean anyContain(Iterable<? extends RexNode> nodes) {
+      try {
+        for (RexNode node : nodes) {
+          node.accept(RexFinder.this);
+        }
+        return false;
+      } catch (Util.FoundOne e) {
+        return true;
+      }
+    }
+  }
+
+  /** Converts a {@link Range} to a {@link RexNode} expression.
+   *
+   * @param <C> Value type */
+  private static class RangeToRex<C extends Comparable<C>>
+      implements RangeSets.Consumer<C> {
+    private final List<RexNode> list;
+    private final RexBuilder rexBuilder;
+    private final RelDataType type;
+    private final RexNode ref;
+
+    RangeToRex(RexNode ref, List<RexNode> list, RexBuilder rexBuilder,
+        RelDataType type) {
+      this.ref = Objects.requireNonNull(ref);
+      this.list = Objects.requireNonNull(list);
+      this.rexBuilder = Objects.requireNonNull(rexBuilder);
+      this.type = Objects.requireNonNull(type);
+    }
+
+    private void addAnd(RexNode... nodes) {
+      list.add(rexBuilder.makeCall(SqlStdOperatorTable.AND, nodes));
+    }
+
+    private RexNode op(SqlOperator op, C value) {
+      return rexBuilder.makeCall(op, ref,
+          rexBuilder.makeLiteral(value, type, true, true));
+    }
+
+    @Override public void all() {
+      list.add(rexBuilder.makeLiteral(true));
+    }
+
+    @Override public void atLeast(C lower) {
+      list.add(op(SqlStdOperatorTable.GREATER_THAN_OR_EQUAL, lower));
+    }
+
+    @Override public void atMost(C upper) {
+      list.add(op(SqlStdOperatorTable.LESS_THAN_OR_EQUAL, upper));
+    }
+
+    @Override public void greaterThan(C lower) {
+      list.add(op(SqlStdOperatorTable.GREATER_THAN, lower));
+    }
+
+    @Override public void lessThan(C upper) {
+      list.add(op(SqlStdOperatorTable.LESS_THAN, upper));
+    }
+
+    @Override public void singleton(C value) {
+      list.add(op(SqlStdOperatorTable.EQUALS, value));
+    }
+
+    @Override public void closed(C lower, C upper) {
+      addAnd(op(SqlStdOperatorTable.GREATER_THAN_OR_EQUAL, lower),
+          op(SqlStdOperatorTable.LESS_THAN_OR_EQUAL, upper));
+    }
+
+    @Override public void closedOpen(C lower, C upper) {
+      addAnd(op(SqlStdOperatorTable.GREATER_THAN_OR_EQUAL, lower),
+          op(SqlStdOperatorTable.LESS_THAN, upper));
+    }
+
+    @Override public void openClosed(C lower, C upper) {
+      addAnd(op(SqlStdOperatorTable.GREATER_THAN, lower),
+          op(SqlStdOperatorTable.LESS_THAN_OR_EQUAL, upper));
+    }
+
+    @Override public void open(C lower, C upper) {
+      addAnd(op(SqlStdOperatorTable.GREATER_THAN, lower),
+          op(SqlStdOperatorTable.LESS_THAN, upper));
+    }
+  }
+
+  /** Shuttle that expands calls to
+   * {@link org.apache.calcite.sql.fun.SqlStdOperatorTable#SEARCH}.
+   *
+   * <p>Calls whose complexity is greater than {@link #maxComplexity}
+   * are retained (not expanded). */
+  private static class SearchExpandingShuttle extends RexShuttle {
+    private final RexBuilder rexBuilder;
+    private final RexProgram program;
+    private final int maxComplexity;
+
+    SearchExpandingShuttle(RexProgram program, RexBuilder rexBuilder,
+        int maxComplexity) {
+      this.program = program;
+      this.rexBuilder = rexBuilder;
+      this.maxComplexity = maxComplexity;
+    }
+
+    @Override public RexNode visitCall(RexCall call) {
+      switch (call.getKind()) {
+      case SEARCH:
+        final RexNode ref = call.operands.get(0);
+        final RexLiteral literal =
+            (RexLiteral) deref(program, call.operands.get(1));
+        final Sarg sarg = literal.getValueAs(Sarg.class);
+        if (maxComplexity < 0 || sarg.complexity() < maxComplexity) {
+          return sargRef(rexBuilder, ref, sarg, literal.getType());
+        }
+        // Sarg is complex (therefore useful); fall through
+      default:
+        return super.visitCall(call);
+      }
+    }
+  }
+}

@@ -64,6 +64,8 @@ public class RexCallBinding extends SqlOperatorBinding {
     case CAST:
       return new RexCastCallBinding(typeFactory, call.getOperator(),
           call.getOperands(), call.getType(), inputCollations);
+    default:
+      break;
     }
     return new RexCallBinding(typeFactory, call.getOperator(),
         call.getOperands(), inputCollations);
@@ -122,17 +124,21 @@ public class RexCallBinding extends SqlOperatorBinding {
     return RexUtil.isLiteral(operands.get(ordinal), allowCast);
   }
 
+  public List<RexNode> operands() {
+    return operands;
+  }
+
   // implement SqlOperatorBinding
-  public int getOperandCount() {
+  @Override public int getOperandCount() {
     return operands.size();
   }
 
   // implement SqlOperatorBinding
-  public RelDataType getOperandType(int ordinal) {
+  @Override public RelDataType getOperandType(int ordinal) {
     return operands.get(ordinal).getType();
   }
 
-  public CalciteException newError(
+  @Override public CalciteException newError(
       Resources.ExInst<SqlValidatorException> e) {
     return SqlUtil.newContextException(SqlParserPos.ZERO, e);
   }
@@ -159,5 +165,3 @@ public class RexCallBinding extends SqlOperatorBinding {
     }
   }
 }
-
-// End RexCallBinding.java

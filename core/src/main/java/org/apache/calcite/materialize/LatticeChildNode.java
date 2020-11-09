@@ -35,12 +35,10 @@ public class LatticeChildNode extends LatticeNode {
     this.link = ImmutableList.copyOf(mutableNode.step.keys);
   }
 
-  void use(List<LatticeNode> usedNodes) {
+  @Override void use(List<LatticeNode> usedNodes) {
     if (!usedNodes.contains(this)) {
       parent.use(usedNodes);
       usedNodes.add(this);
     }
   }
 }
-
-// End LatticeChildNode.java

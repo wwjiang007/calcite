@@ -21,8 +21,8 @@ import org.apache.calcite.avatica.util.TimeUnitRange;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptRuleCall;
+import org.apache.calcite.plan.RelRule;
 import org.apache.calcite.rel.core.Filter;
-import org.apache.calcite.rel.core.RelFactories;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexLiteral;
@@ -36,7 +36,6 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.tools.RelBuilderFactory;
-import org.apache.calcite.util.Bug;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimestampString;
 import org.apache.calcite.util.TimestampWithTimeZoneString;
@@ -64,7 +63,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TimeZone;
-import java.util.function.Predicate;
 import javax.annotation.Nonnull;
 
 /**
@@ -91,21 +89,13 @@ public abstract class DateRangeRules {
 
   private DateRangeRules() {}
 
-  private static final Predicate<Filter> FILTER_PREDICATE =
-      filter -> {
-        try (ExtractFinder finder = ExtractFinder.THREAD_INSTANCES.get()) {
-          assert finder.timeUnits.isEmpty() && finder.opKinds.isEmpty()
-              : "previous user did not clean up";
-          filter.getCondition().accept(finder);
-          // bail out if there is no EXTRACT of YEAR, or call to FLOOR or CEIL
-          return finder.timeUnits.contains(TimeUnitRange.YEAR)
-              || finder.opKinds.contains(SqlKind.FLOOR)
-              || finder.opKinds.contains(SqlKind.CEIL);
-        }
-      };
-
+  /** Rule that matches a {@link Filter} and converts calls to {@code EXTRACT},
+   * {@code FLOOR} and {@code CEIL} functions to date ranges (typically using
+   * the {@code BETWEEN} operator). */
   public static final RelOptRule FILTER_INSTANCE =
-      new FilterDateRangeRule(RelFactories.LOGICAL_BUILDER);
+      FilterDateRangeRule.Config.DEFAULT
+          .as(FilterDateRangeRule.Config.class)
+          .toRule();
 
   private static final Map<TimeUnitRange, Integer> TIME_UNIT_CODES =
       ImmutableMap.<TimeUnitRange, Integer>builder()
@@ -148,6 +138,7 @@ public abstract class DateRangeRules {
 
   /** Replaces calls to EXTRACT, FLOOR and CEIL in an expression. */
   @VisibleForTesting
+  @SuppressWarnings("BetaApi")
   public static RexNode replaceTimeUnits(RexBuilder rexBuilder, RexNode e,
       String timeZone) {
     ImmutableSortedSet<TimeUnitRange> timeUnits = extractTimeUnits(e);
@@ -168,12 +159,35 @@ public abstract class DateRangeRules {
   }
 
   /** Rule that converts EXTRACT, FLOOR and CEIL in a {@link Filter} into a date
-   * range. */
+   * range.
+   *
+   * @see DateRangeRules#FILTER_INSTANCE */
   @SuppressWarnings("WeakerAccess")
-  public static class FilterDateRangeRule extends RelOptRule {
+  public static class FilterDateRangeRule
+      extends RelRule<FilterDateRangeRule.Config>
+      implements TransformationRule {
+    /** Creates a FilterDateRangeRule. */
+    protected FilterDateRangeRule(Config config) {
+      super(config);
+    }
+
+    @Deprecated // to be removed before 2.0
     public FilterDateRangeRule(RelBuilderFactory relBuilderFactory) {
-      super(operandJ(Filter.class, null, FILTER_PREDICATE, any()),
-          relBuilderFactory, "FilterDateRangeRule");
+      this(Config.DEFAULT.withRelBuilderFactory(relBuilderFactory)
+          .as(Config.class));
+    }
+
+    /** Whether this an EXTRACT of YEAR, or a call to FLOOR or CEIL.
+     * If none of these, we cannot apply the rule. */
+    private static boolean containsRoundingExpression(Filter filter) {
+      try (ExtractFinder finder = ExtractFinder.THREAD_INSTANCES.get()) {
+        assert finder.timeUnits.isEmpty() && finder.opKinds.isEmpty()
+            : "previous user did not clean up";
+        filter.getCondition().accept(finder);
+        return finder.timeUnits.contains(TimeUnitRange.YEAR)
+            || finder.opKinds.contains(SqlKind.FLOOR)
+            || finder.opKinds.contains(SqlKind.CEIL);
+      }
     }
 
     @Override public void onMatch(RelOptRuleCall call) {
@@ -192,11 +206,25 @@ public abstract class DateRangeRules {
           .filter(condition);
       call.transformTo(relBuilder.build());
     }
+
+    /** Rule configuration. */
+    public interface Config extends RelRule.Config {
+      Config DEFAULT = EMPTY
+          .withOperandSupplier(b ->
+              b.operand(Filter.class)
+                  .predicate(FilterDateRangeRule::containsRoundingExpression)
+                  .anyInputs())
+          .as(Config.class);
+
+      @Override default FilterDateRangeRule toRule() {
+        return new FilterDateRangeRule(this);
+      }
+    }
   }
 
   /** Visitor that searches for calls to {@code EXTRACT}, {@code FLOOR} or
    * {@code CEIL}, building a list of distinct time units. */
-  private static class ExtractFinder extends RexVisitorImpl
+  private static class ExtractFinder extends RexVisitorImpl<Void>
       implements AutoCloseable {
     private final Set<TimeUnitRange> timeUnits =
         EnumSet.noneOf(TimeUnitRange.class);
@@ -209,7 +237,7 @@ public abstract class DateRangeRules {
       super(true);
     }
 
-    @Override public Object visitCall(RexCall call) {
+    @Override public Void visitCall(RexCall call) {
       switch (call.getKind()) {
       case EXTRACT:
         final RexLiteral operand = (RexLiteral) call.getOperands().get(0);
@@ -222,11 +250,13 @@ public abstract class DateRangeRules {
           opKinds.add(call.getKind());
         }
         break;
+      default:
+        break;
       }
       return super.visitCall(call);
     }
 
-    public void close() {
+    @Override public void close() {
       timeUnits.clear();
       opKinds.clear();
     }
@@ -235,6 +265,7 @@ public abstract class DateRangeRules {
   /** Walks over an expression, replacing calls to
    * {@code EXTRACT}, {@code FLOOR} and {@code CEIL} with date ranges. */
   @VisibleForTesting
+  @SuppressWarnings("BetaApi")
   static class ExtractShuttle extends RexShuttle {
     private final RexBuilder rexBuilder;
     private final TimeUnitRange timeUnit;
@@ -249,8 +280,6 @@ public abstract class DateRangeRules {
         ImmutableSortedSet<TimeUnitRange> timeUnitRanges, String timeZone) {
       this.rexBuilder = Objects.requireNonNull(rexBuilder);
       this.timeUnit = Objects.requireNonNull(timeUnit);
-      Bug.upgrade("Change type to Map<RexNode, RangeSet<Calendar>> when"
-          + " [CALCITE-1367] is fixed");
       this.operandRanges = Objects.requireNonNull(operandRanges);
       this.timeUnitRanges = Objects.requireNonNull(timeUnitRanges);
       this.timeZone = timeZone;
@@ -286,6 +315,9 @@ public abstract class DateRangeRules {
                 subCall.getOperands().get(0), (RexLiteral) op0,
                 timeUnit, op1.getKind() == SqlKind.FLOOR);
           }
+          break;
+        default:
+          break;
         }
         switch (op1.getKind()) {
         case LITERAL:
@@ -307,6 +339,9 @@ public abstract class DateRangeRules {
                 subCall.getOperands().get(0), (RexLiteral) op1,
                 timeUnit, op0.getKind() == SqlKind.FLOOR);
           }
+          break;
+        default:
+          break;
         }
         // fall through
       default:
@@ -434,6 +469,9 @@ public abstract class DateRangeRules {
               s2.add(extractRange(timeUnit, comparison, c));
             }
           }
+          break;
+        default:
+          break;
         }
       }
       // Intersect old range set with new.
@@ -698,10 +736,11 @@ public abstract class DateRangeRules {
         // fall through; need to zero out lower time units
       case SECOND:
         c.set(TIME_UNIT_CODES.get(TimeUnitRange.MILLISECOND), 0);
+        break;
+      default:
+        break;
       }
       return c;
     }
   }
 }
-
-// End DateRangeRules.java

@@ -63,20 +63,25 @@ public enum Primitive {
   /** The default value of this primitive class. This is the value
    * taken by uninitialized fields, for instance; 0 for {@code int}, false for
    * {@code boolean}, etc. */
+  @SuppressWarnings("ImmutableEnumChecker")
   public final Object defaultValue;
 
   /** The minimum value of this primitive class. */
+  @SuppressWarnings("ImmutableEnumChecker")
   public final Object min;
 
   /** The largest value that is less than zero. Null if not applicable for this
    * type. */
+  @SuppressWarnings("ImmutableEnumChecker")
   public final Object maxNegative;
 
   /** The smallest value that is greater than zero. Null if not applicable for
    * this type. */
+  @SuppressWarnings("ImmutableEnumChecker")
   public final Object minPositive;
 
   /** The maximum value of this primitive class. */
+  @SuppressWarnings("ImmutableEnumChecker")
   public final Object max;
 
   /** The size of a value of this type, in bits. Null if not applicable for this
@@ -248,16 +253,16 @@ public enum Primitive {
 
   /**
    * Adapts a primitive array into a {@link List}. For example,
-   * {@code asList(new double[2])} returns a {@code List&lt;Double&gt;}.
+   * {@code asList(new double[2])} returns a {@code List<Double>}.
    */
   public static List<?> asList(final Object array) {
     // REVIEW: A per-type list might be more efficient. (Or might not.)
     return new AbstractList() {
-      public Object get(int index) {
+      @Override public Object get(int index) {
         return Array.get(array, index);
       }
 
-      public int size() {
+      @Override public int size() {
         return Array.getLength(array);
       }
     };
@@ -1002,7 +1007,9 @@ public enum Primitive {
     Object getObject();
   }
 
-  /** What kind of type? */
+  /** Whether a type is primitive (e.g. {@code int}),
+   * a box type for a primitive (e.g. {@code java.lang.Integer}),
+   * or something else. */
   public enum Flavor {
     /** A primitive type, e.g. {@code int}. */
     PRIMITIVE,
@@ -1012,5 +1019,3 @@ public enum Primitive {
     OBJECT
   }
 }
-
-// End Primitive.java

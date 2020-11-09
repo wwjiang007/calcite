@@ -37,15 +37,15 @@ public abstract class CalciteFactory implements AvaticaFactory {
     this.minor = minor;
   }
 
-  public int getJdbcMajorVersion() {
+  @Override public int getJdbcMajorVersion() {
     return major;
   }
 
-  public int getJdbcMinorVersion() {
+  @Override public int getJdbcMinorVersion() {
     return minor;
   }
 
-  public final AvaticaConnection newConnection(
+  @Override public final AvaticaConnection newConnection(
       UnregisteredDriver driver,
       AvaticaFactory factory,
       String url,
@@ -58,5 +58,3 @@ public abstract class CalciteFactory implements AvaticaFactory {
       AvaticaFactory factory, String url, Properties info,
       CalciteSchema rootSchema, JavaTypeFactory typeFactory);
 }
-
-// End CalciteFactory.java

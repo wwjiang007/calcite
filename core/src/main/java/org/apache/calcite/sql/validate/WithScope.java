@@ -43,7 +43,7 @@ class WithScope extends ListScope {
     this.withItem = withItem;
   }
 
-  public SqlNode getNode() {
+  @Override public SqlNode getNode() {
     return withItem;
   }
 
@@ -66,19 +66,4 @@ class WithScope extends ListScope {
     }
     super.resolveTable(names, nameMatcher, path, resolved);
   }
-
-  @Override public void resolve(List<String> names, SqlNameMatcher nameMatcher,
-      boolean deep, Resolved resolved) {
-    if (names.size() == 1
-        && names.equals(withItem.name.names)) {
-      final SqlValidatorNamespace ns = validator.getNamespace(withItem);
-      final Step path = Path.EMPTY.plus(ns.getRowType(), 0, names.get(0),
-          StructKind.FULLY_QUALIFIED);
-      resolved.found(ns, false, null, path, null);
-      return;
-    }
-    super.resolve(names, nameMatcher, deep, resolved);
-  }
 }
-
-// End WithScope.java

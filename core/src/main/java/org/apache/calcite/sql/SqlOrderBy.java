@@ -60,11 +60,11 @@ public class SqlOrderBy extends SqlCall {
     return SqlKind.ORDER_BY;
   }
 
-  public SqlOperator getOperator() {
+  @Override public SqlOperator getOperator() {
     return OPERATOR;
   }
 
-  public List<SqlNode> getOperandList() {
+  @Override public List<SqlNode> getOperandList() {
     return ImmutableNullableList.of(query, orderList, offset, fetch);
   }
 
@@ -75,11 +75,11 @@ public class SqlOrderBy extends SqlCall {
       super("ORDER BY", SqlKind.ORDER_BY, 0);
     }
 
-    public SqlSyntax getSyntax() {
+    @Override public SqlSyntax getSyntax() {
       return SqlSyntax.POSTFIX;
     }
 
-    public void unparse(
+    @Override public void unparse(
         SqlWriter writer,
         SqlCall call,
         int leftPrec,
@@ -90,10 +90,8 @@ public class SqlOrderBy extends SqlCall {
       orderBy.query.unparse(writer, getLeftPrec(), getRightPrec());
       if (orderBy.orderList != SqlNodeList.EMPTY) {
         writer.sep(getName());
-        final SqlWriter.Frame listFrame =
-            writer.startList(SqlWriter.FrameTypeEnum.ORDER_BY_LIST);
-        unparseListClause(writer, orderBy.orderList);
-        writer.endList(listFrame);
+        writer.list(SqlWriter.FrameTypeEnum.ORDER_BY_LIST, SqlWriter.COMMA,
+            orderBy.orderList);
       }
       if (orderBy.offset != null) {
         final SqlWriter.Frame frame2 =
@@ -119,5 +117,3 @@ public class SqlOrderBy extends SqlCall {
     }
   }
 }
-
-// End SqlOrderBy.java

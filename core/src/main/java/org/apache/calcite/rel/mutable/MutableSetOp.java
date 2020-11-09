@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.Objects;
 
 /** Mutable equivalent of {@link org.apache.calcite.rel.core.SetOp}. */
-abstract class MutableSetOp extends MutableMultiRel {
+public abstract class MutableSetOp extends MutableMultiRel {
   protected final boolean all;
 
   protected MutableSetOp(RelOptCluster cluster, RelDataType rowType,
@@ -48,5 +48,3 @@ abstract class MutableSetOp extends MutableMultiRel {
     return Objects.hash(type, inputs, all);
   }
 }
-
-// End MutableSetOp.java

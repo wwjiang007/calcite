@@ -150,6 +150,38 @@ public class RelFieldCollation {
         return false;
       }
     }
+
+    /**
+     * Returns the reverse of this direction.
+     *
+     * @return reverse of the input direction
+     */
+    @Nonnull public Direction reverse() {
+      switch (this) {
+      case ASCENDING:
+        return DESCENDING;
+      case STRICTLY_ASCENDING:
+        return STRICTLY_DESCENDING;
+      case DESCENDING:
+        return ASCENDING;
+      case STRICTLY_DESCENDING:
+        return STRICTLY_ASCENDING;
+      default:
+        return this;
+      }
+    }
+
+    /** Removes strictness. */
+    @Nonnull public Direction lax() {
+      switch (this) {
+      case STRICTLY_ASCENDING:
+        return ASCENDING;
+      case STRICTLY_DESCENDING:
+        return DESCENDING;
+      default:
+        return this;
+      }
+    }
   }
 
   /**
@@ -268,7 +300,7 @@ public class RelFieldCollation {
     return direction;
   }
 
-  public String toString() {
+  @Override public String toString() {
     if (direction == Direction.ASCENDING
         && nullDirection == direction.defaultNullDirection()) {
       return String.valueOf(fieldIndex);
@@ -295,5 +327,3 @@ public class RelFieldCollation {
     }
   }
 }
-
-// End RelFieldCollation.java

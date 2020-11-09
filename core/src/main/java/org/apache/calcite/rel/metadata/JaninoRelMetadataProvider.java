@@ -18,7 +18,7 @@ package org.apache.calcite.rel.metadata;
 
 import org.apache.calcite.adapter.enumerable.EnumerableAggregate;
 import org.apache.calcite.adapter.enumerable.EnumerableFilter;
-import org.apache.calcite.adapter.enumerable.EnumerableJoin;
+import org.apache.calcite.adapter.enumerable.EnumerableHashJoin;
 import org.apache.calcite.adapter.enumerable.EnumerableProject;
 import org.apache.calcite.adapter.enumerable.EnumerableTableScan;
 import org.apache.calcite.config.CalciteSystemProperty;
@@ -142,7 +142,7 @@ public class JaninoRelMetadataProvider implements RelMetadataProvider {
             EnumerableAggregate.class,
             EnumerableFilter.class,
             EnumerableProject.class,
-            EnumerableJoin.class,
+            EnumerableHashJoin.class,
             EnumerableTableScan.class));
   }
 
@@ -181,12 +181,12 @@ public class JaninoRelMetadataProvider implements RelMetadataProvider {
     return 109 + provider.hashCode();
   }
 
-  public <M extends Metadata> UnboundMetadata<M> apply(
+  @Override public <M extends Metadata> UnboundMetadata<M> apply(
       Class<? extends RelNode> relClass, Class<? extends M> metadataClass) {
     throw new UnsupportedOperationException();
   }
 
-  public <M extends Metadata> Multimap<Method, MetadataHandler<M>>
+  @Override public <M extends Metadata> Multimap<Method, MetadataHandler<M>>
       handlers(MetadataDef<M> def) {
     return provider.handlers(def);
   }
@@ -204,8 +204,8 @@ public class JaninoRelMetadataProvider implements RelMetadataProvider {
         new ReflectiveRelMetadataProvider.Space((Multimap) map);
     for (MetadataHandler provider : space.providerMap.values()) {
       if (providerSet.add(provider)) {
-        providerList.add(Pair.of("provider" + (providerSet.size() - 1),
-            provider));
+        providerList.add(
+            Pair.of("provider" + (providerSet.size() - 1), provider));
       }
     }
 
@@ -265,17 +265,16 @@ public class JaninoRelMetadataProvider implements RelMetadataProvider {
             .append(method.i)
             .append(")");
       }
-      buff.append(", r");
       safeArgList(buff, method.e)
           .append(");\n")
-          .append("    final Object v = mq.map.get(key);\n")
+          .append("    final Object v = mq.map.get(r, key);\n")
           .append("    if (v != null) {\n")
           .append("      if (v == ")
           .append(NullSentinel.class.getName())
           .append(".ACTIVE) {\n")
-          .append("        throw ")
+          .append("        throw new ")
           .append(CyclicMetadataException.class.getName())
-          .append(".INSTANCE;\n")
+          .append("();\n")
           .append("      }\n")
           .append("      if (v == ")
           .append(NullSentinel.class.getName())
@@ -286,7 +285,7 @@ public class JaninoRelMetadataProvider implements RelMetadataProvider {
           .append(method.e.getReturnType().getName())
           .append(") v;\n")
           .append("    }\n")
-          .append("    mq.map.put(key,")
+          .append("    mq.map.put(r, key,")
           .append(NullSentinel.class.getName())
           .append(".ACTIVE);\n")
           .append("    try {\n")
@@ -297,14 +296,14 @@ public class JaninoRelMetadataProvider implements RelMetadataProvider {
           .append("_(r, mq");
       argList(buff, method.e)
           .append(");\n")
-          .append("      mq.map.put(key, ")
+          .append("      mq.map.put(r, key, ")
           .append(NullSentinel.class.getName())
           .append(".mask(x));\n")
           .append("      return x;\n")
           .append("    } catch (")
           .append(Exception.class.getName())
           .append(" e) {\n")
-          .append("      mq.map.remove(key);\n")
+          .append("      mq.map.row(r).clear();\n")
           .append("      throw e;\n")
           .append("    }\n")
           .append("  }\n")
@@ -401,13 +400,8 @@ public class JaninoRelMetadataProvider implements RelMetadataProvider {
   /** Returns e.g. ", ignoreNulls". */
   private static StringBuilder safeArgList(StringBuilder buff, Method method) {
     for (Ord<Class<?>> t : Ord.zip(method.getParameterTypes())) {
-      if (Primitive.is(t.e)) {
+      if (Primitive.is(t.e) || RexNode.class.isAssignableFrom(t.e)) {
         buff.append(", a").append(t.i);
-      } else if (RexNode.class.isAssignableFrom(t.e)) {
-        // For RexNode, convert to string, because equals does not look deep.
-        //   a1 == null ? "" : a1.toString()
-        buff.append(", a").append(t.i).append(" == null ? \"\" : a")
-            .append(t.i).append(".toString()");
       } else {
         buff.append(", ") .append(NullSentinel.class.getName())
             .append(".mask(a").append(t.i).append(")");
@@ -474,8 +468,7 @@ public class JaninoRelMetadataProvider implements RelMetadataProvider {
       //noinspection unchecked
       return (H) HANDLERS.get(key);
     } catch (UncheckedExecutionException | ExecutionException e) {
-      Util.throwIfUnchecked(e.getCause());
-      throw new RuntimeException(e.getCause());
+      throw Util.throwAsRuntime(Util.causeOrSelf(e));
     }
   }
 
@@ -549,5 +542,3 @@ public class JaninoRelMetadataProvider implements RelMetadataProvider {
     }
   }
 }
-
-// End JaninoRelMetadataProvider.java

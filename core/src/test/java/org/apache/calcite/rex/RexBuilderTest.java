@@ -21,10 +21,9 @@ import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
+import org.apache.calcite.rel.type.RelDataTypeSystemImpl;
 import org.apache.calcite.sql.SqlCollation;
-import org.apache.calcite.sql.SqlWindow;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
-import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.BasicSqlType;
 import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
 import org.apache.calcite.sql.type.SqlTypeName;
@@ -38,7 +37,7 @@ import org.apache.calcite.util.Util;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -48,17 +47,17 @@ import java.util.TimeZone;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Test for {@link RexBuilder}.
  */
-public class RexBuilderTest {
+class RexBuilderTest {
 
   private static final int PRECISION = 256;
 
@@ -87,8 +86,7 @@ public class RexBuilderTest {
   /**
    * Test RexBuilder.ensureType()
    */
-  @Test
-  public void testEnsureTypeWithAny() {
+  @Test void testEnsureTypeWithAny() {
     final RelDataTypeFactory typeFactory = new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     RexBuilder builder = new RexBuilder(typeFactory);
 
@@ -103,8 +101,7 @@ public class RexBuilderTest {
   /**
    * Test RexBuilder.ensureType()
    */
-  @Test
-  public void testEnsureTypeWithItself() {
+  @Test void testEnsureTypeWithItself() {
     final RelDataTypeFactory typeFactory = new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     RexBuilder builder = new RexBuilder(typeFactory);
 
@@ -119,8 +116,7 @@ public class RexBuilderTest {
   /**
    * Test RexBuilder.ensureType()
    */
-  @Test
-  public void testEnsureTypeWithDifference() {
+  @Test void testEnsureTypeWithDifference() {
     final RelDataTypeFactory typeFactory = new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     RexBuilder builder = new RexBuilder(typeFactory);
 
@@ -140,7 +136,7 @@ public class RexBuilderTest {
   private static final int MOON_TIME = 10575000;
 
   /** Tests {@link RexBuilder#makeTimestampLiteral(TimestampString, int)}. */
-  @Test public void testTimestampLiteral() {
+  @Test void testTimestampLiteral() {
     final RelDataTypeFactory typeFactory =
         new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     final RelDataType timestampType =
@@ -221,7 +217,7 @@ public class RexBuilderTest {
 
   /** Tests
    * {@link RexBuilder#makeTimestampWithLocalTimeZoneLiteral(TimestampString, int)}. */
-  @Test public void testTimestampWithLocalTimeZoneLiteral() {
+  @Test void testTimestampWithLocalTimeZoneLiteral() {
     final RelDataTypeFactory typeFactory =
         new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     final RelDataType timestampType =
@@ -291,7 +287,7 @@ public class RexBuilderTest {
   }
 
   /** Tests {@link RexBuilder#makeTimeLiteral(TimeString, int)}. */
-  @Test public void testTimeLiteral() {
+  @Test void testTimeLiteral() {
     final RelDataTypeFactory typeFactory =
         new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     RelDataType timeType = typeFactory.createSqlType(SqlTypeName.TIME);
@@ -370,7 +366,7 @@ public class RexBuilderTest {
   }
 
   /** Tests {@link RexBuilder#makeDateLiteral(DateString)}. */
-  @Test public void testDateLiteral() {
+  @Test void testDateLiteral() {
     final RelDataTypeFactory typeFactory =
         new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     RelDataType dateType = typeFactory.createSqlType(SqlTypeName.DATE);
@@ -405,7 +401,7 @@ public class RexBuilderTest {
    * <a href="https://issues.apache.org/jira/browse/CALCITE-2306">[CALCITE-2306]
    * AssertionError in {@link RexLiteral#getValue3} with null literal of type
    * DECIMAL</a>. */
-  @Test public void testDecimalLiteral() {
+  @Test void testDecimalLiteral() {
     final RelDataTypeFactory typeFactory =
         new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     final RelDataType type = typeFactory.createSqlType(SqlTypeName.DECIMAL);
@@ -414,8 +410,26 @@ public class RexBuilderTest {
     assertThat(literal.getValue3(), nullValue());
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-3587">[CALCITE-3587]
+   * RexBuilder may lose decimal fraction for creating literal with DECIMAL type</a>.
+   */
+  @Test void testDecimal() {
+    final RelDataTypeFactory typeFactory =
+        new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
+    final RelDataType type = typeFactory.createSqlType(SqlTypeName.DECIMAL, 4, 2);
+    final RexBuilder builder = new RexBuilder(typeFactory);
+    try {
+      builder.makeLiteral(12.3, type, false);
+      fail();
+    } catch (AssertionError e) {
+      assertThat(e.getMessage(),
+          is("java.lang.Double is not compatible with DECIMAL, try to use makeExactLiteral"));
+    }
+  }
+
   /** Tests {@link DateString} year range. */
-  @Test public void testDateStringYearError() {
+  @Test void testDateStringYearError() {
     try {
       final DateString dateString = new DateString(11969, 7, 21);
       fail("expected exception, got " + dateString);
@@ -432,7 +446,7 @@ public class RexBuilderTest {
   }
 
   /** Tests {@link DateString} month range. */
-  @Test public void testDateStringMonthError() {
+  @Test void testDateStringMonthError() {
     try {
       final DateString dateString = new DateString(1969, 27, 21);
       fail("expected exception, got " + dateString);
@@ -448,7 +462,7 @@ public class RexBuilderTest {
   }
 
   /** Tests {@link DateString} day range. */
-  @Test public void testDateStringDayError() {
+  @Test void testDateStringDayError() {
     try {
       final DateString dateString = new DateString(1969, 7, 41);
       fail("expected exception, got " + dateString);
@@ -467,7 +481,7 @@ public class RexBuilderTest {
   }
 
   /** Tests {@link TimeString} hour range. */
-  @Test public void testTimeStringHourError() {
+  @Test void testTimeStringHourError() {
     try {
       final TimeString timeString = new TimeString(111, 34, 56);
       fail("expected exception, got " + timeString);
@@ -490,7 +504,7 @@ public class RexBuilderTest {
   }
 
   /** Tests {@link TimeString} minute range. */
-  @Test public void testTimeStringMinuteError() {
+  @Test void testTimeStringMinuteError() {
     try {
       final TimeString timeString = new TimeString(12, 334, 56);
       fail("expected exception, got " + timeString);
@@ -506,7 +520,7 @@ public class RexBuilderTest {
   }
 
   /** Tests {@link TimeString} second range. */
-  @Test public void testTimeStringSecondError() {
+  @Test void testTimeStringSecondError() {
     try {
       final TimeString timeString = new TimeString(12, 34, 567);
       fail("expected exception, got " + timeString);
@@ -530,7 +544,7 @@ public class RexBuilderTest {
   /**
    * Test string literal encoding.
    */
-  @Test public void testStringLiteral() {
+  @Test void testStringLiteral() {
     final RelDataTypeFactory typeFactory =
         new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     final RelDataType varchar =
@@ -576,9 +590,12 @@ public class RexBuilderTest {
   }
 
   /** Tests {@link RexBuilder#makeExactLiteral(java.math.BigDecimal)}. */
-  @Test public void testBigDecimalLiteral() {
-    final RelDataTypeFactory typeFactory =
-        new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
+  @Test void testBigDecimalLiteral() {
+    final RelDataTypeFactory typeFactory = new SqlTypeFactoryImpl(new RelDataTypeSystemImpl() {
+      @Override public int getMaxPrecision(SqlTypeName typeName) {
+        return 38;
+      }
+    });
     final RexBuilder builder = new RexBuilder(typeFactory);
     checkBigDecimalLiteral(builder, "25");
     checkBigDecimalLiteral(builder, "9.9");
@@ -591,8 +608,8 @@ public class RexBuilderTest {
     checkBigDecimalLiteral(builder, "-73786976294838206464");
   }
 
-  /** Tests {@link RexCopier#visitOver(RexOver)} */
-  @Test public void testCopyOver() {
+  /** Tests {@link RexCopier#visitOver(RexOver)}. */
+  @Test void testCopyOver() {
     final RelDataTypeFactory sourceTypeFactory =
         new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     RelDataType type = sourceTypeFactory.createSqlType(SqlTypeName.VARCHAR, 65536);
@@ -608,10 +625,8 @@ public class RexBuilderTest {
         ImmutableList.of(
             new RexFieldCollation(
                 builder.makeInputRef(type, 2), ImmutableSet.of())),
-        RexWindowBound.create(
-            SqlWindow.createUnboundedPreceding(SqlParserPos.ZERO), null),
-        RexWindowBound.create(
-            SqlWindow.createCurrentRow(SqlParserPos.ZERO), null),
+        RexWindowBounds.UNBOUNDED_PRECEDING,
+        RexWindowBounds.CURRENT_ROW,
         true, true, false, false, false);
     final RexNode copy = builder.copy(node);
     assertTrue(copy instanceof RexOver);
@@ -632,8 +647,8 @@ public class RexBuilderTest {
     }
   }
 
-  /** Tests {@link RexCopier#visitCorrelVariable(RexCorrelVariable)} */
-  @Test public void testCopyCorrelVariable() {
+  /** Tests {@link RexCopier#visitCorrelVariable(RexCorrelVariable)}. */
+  @Test void testCopyCorrelVariable() {
     final RelDataTypeFactory sourceTypeFactory =
         new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     RelDataType type = sourceTypeFactory.createSqlType(SqlTypeName.VARCHAR, 65536);
@@ -653,8 +668,8 @@ public class RexBuilderTest {
     assertThat(result.getType().getPrecision(), is(PRECISION));
   }
 
-  /** Tests {@link RexCopier#visitLocalRef(RexLocalRef)} */
-  @Test public void testCopyLocalRef() {
+  /** Tests {@link RexCopier#visitLocalRef(RexLocalRef)}. */
+  @Test void testCopyLocalRef() {
     final RelDataTypeFactory sourceTypeFactory =
         new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     RelDataType type = sourceTypeFactory.createSqlType(SqlTypeName.VARCHAR, 65536);
@@ -673,8 +688,8 @@ public class RexBuilderTest {
     assertThat(result.getType().getPrecision(), is(PRECISION));
   }
 
-  /** Tests {@link RexCopier#visitDynamicParam(RexDynamicParam)} */
-  @Test public void testCopyDynamicParam() {
+  /** Tests {@link RexCopier#visitDynamicParam(RexDynamicParam)}. */
+  @Test void testCopyDynamicParam() {
     final RelDataTypeFactory sourceTypeFactory =
         new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     RelDataType type = sourceTypeFactory.createSqlType(SqlTypeName.VARCHAR, 65536);
@@ -693,8 +708,8 @@ public class RexBuilderTest {
     assertThat(result.getType().getPrecision(), is(PRECISION));
   }
 
-  /** Tests {@link RexCopier#visitRangeRef(RexRangeRef)} */
-  @Test public void testCopyRangeRef() {
+  /** Tests {@link RexCopier#visitRangeRef(RexRangeRef)}. */
+  @Test void testCopyRangeRef() {
     final RelDataTypeFactory sourceTypeFactory =
         new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
     RelDataType type = sourceTypeFactory.createSqlType(SqlTypeName.VARCHAR, 65536);
@@ -721,5 +736,3 @@ public class RexBuilderTest {
   }
 
 }
-
-// End RexBuilderTest.java

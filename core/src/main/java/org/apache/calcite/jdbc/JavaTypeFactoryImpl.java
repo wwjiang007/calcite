@@ -27,13 +27,14 @@ import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rel.type.RelDataTypeFieldImpl;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.rel.type.RelRecordType;
-import org.apache.calcite.runtime.GeoFunctions;
+import org.apache.calcite.runtime.Geometries;
 import org.apache.calcite.runtime.Unit;
 import org.apache.calcite.sql.type.BasicSqlType;
 import org.apache.calcite.sql.type.IntervalSqlType;
 import org.apache.calcite.sql.type.JavaToSqlTypeConversionRules;
 import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
@@ -69,7 +70,7 @@ public class JavaTypeFactoryImpl
     super(typeSystem);
   }
 
-  public RelDataType createStructType(Class type) {
+  @Override public RelDataType createStructType(Class type) {
     final List<RelDataTypeField> list = new ArrayList<>();
     for (Field field : type.getFields()) {
       if (!Modifier.isStatic(field.getModifiers())) {
@@ -107,7 +108,7 @@ public class JavaTypeFactoryImpl
     return klass;
   }
 
-  public RelDataType createType(Type type) {
+  @Override public RelDataType createType(Type type) {
     if (type instanceof RelDataType) {
       return (RelDataType) type;
     }
@@ -141,6 +142,8 @@ public class JavaTypeFactoryImpl
       return createJavaType(clazz);
     case BOX:
       return createJavaType(Primitive.ofBox(clazz).boxClass);
+    default:
+      break;
     }
     if (JavaToSqlTypeConversionRules.instance().lookup(clazz) != null) {
       return createJavaType(clazz);
@@ -159,7 +162,7 @@ public class JavaTypeFactoryImpl
     }
   }
 
-  public Type getJavaClass(RelDataType type) {
+  @Override public Type getJavaClass(RelDataType type) {
     if (type instanceof JavaType) {
       JavaType javaType = (JavaType) type;
       return javaType.getJavaClass();
@@ -208,11 +211,15 @@ public class JavaTypeFactoryImpl
       case VARBINARY:
         return ByteString.class;
       case GEOMETRY:
-        return GeoFunctions.Geom.class;
+        return Geometries.Geom.class;
       case SYMBOL:
         return Enum.class;
       case ANY:
         return Object.class;
+      case NULL:
+        return Void.class;
+      default:
+        break;
       }
     }
     switch (type.getSqlTypeName()) {
@@ -228,11 +235,13 @@ public class JavaTypeFactoryImpl
     case ARRAY:
     case MULTISET:
       return List.class;
+    default:
+      break;
     }
     return null;
   }
 
-  public RelDataType toSql(RelDataType type) {
+  @Override public RelDataType toSql(RelDataType type) {
     return toSql(this, type);
   }
 
@@ -249,14 +258,39 @@ public class JavaTypeFactoryImpl
               type.getFieldNames()),
           type.isNullable());
     } else if (type instanceof JavaType) {
-      return typeFactory.createTypeWithNullability(
-          typeFactory.createSqlType(type.getSqlTypeName()),
-          type.isNullable());
+      SqlTypeName sqlTypeName = type.getSqlTypeName();
+      final RelDataType relDataType;
+      if (SqlTypeUtil.isArray(type)) {
+        // Transform to sql type, take care for two cases:
+        // 1. type.getJavaClass() is collection with erased generic type
+        // 2. ElementType returned by JavaType is also of JavaType,
+        // and needs conversion using typeFactory
+        final RelDataType elementType = toSqlTypeWithNullToAny(
+            typeFactory, type.getComponentType());
+        relDataType = typeFactory.createArrayType(elementType, -1);
+      } else if (SqlTypeUtil.isMap(type)) {
+        final RelDataType keyType = toSqlTypeWithNullToAny(
+            typeFactory, type.getKeyType());
+        final RelDataType valueType = toSqlTypeWithNullToAny(
+            typeFactory, type.getValueType());
+        relDataType = typeFactory.createMapType(keyType, valueType);
+      } else {
+        relDataType = typeFactory.createSqlType(sqlTypeName);
+      }
+      return typeFactory.createTypeWithNullability(relDataType, type.isNullable());
     }
     return type;
   }
 
-  public Type createSyntheticType(List<Type> types) {
+  private static RelDataType toSqlTypeWithNullToAny(
+      final RelDataTypeFactory typeFactory, RelDataType type) {
+    if (type == null) {
+      return typeFactory.createSqlType(SqlTypeName.ANY);
+    }
+    return toSql(typeFactory, type);
+  }
+
+  @Override public Type createSyntheticType(List<Type> types) {
     if (types.isEmpty()) {
       // Unit is a pre-defined synthetic type to be used when there are 0
       // fields. Because all instances are the same, we use a singleton.
@@ -282,13 +316,13 @@ public class JavaTypeFactoryImpl
       final SyntheticRecordType syntheticType) {
     final List<Pair<Type, Boolean>> key =
         new AbstractList<Pair<Type, Boolean>>() {
-          public Pair<Type, Boolean> get(int index) {
+          @Override public Pair<Type, Boolean> get(int index) {
             final Types.RecordField field =
                 syntheticType.getRecordFields().get(index);
             return Pair.of(field.getType(), field.nullable());
           }
 
-          public int size() {
+          @Override public int size() {
             return syntheticType.getRecordFields().size();
           }
         };
@@ -336,15 +370,15 @@ public class JavaTypeFactoryImpl
           : "field names not distinct: " + relType;
     }
 
-    public String getName() {
+    @Override public String getName() {
       return name;
     }
 
-    public List<Types.RecordField> getRecordFields() {
+    @Override public List<Types.RecordField> getRecordFields() {
       return fields;
     }
 
-    public String toString() {
+    @Override public String toString() {
       return name;
     }
   }
@@ -372,30 +406,28 @@ public class JavaTypeFactoryImpl
           : "type [" + type + "] can never be null";
     }
 
-    public Type getType() {
+    @Override public Type getType() {
       return type;
     }
 
-    public String getName() {
+    @Override public String getName() {
       return name;
     }
 
-    public int getModifiers() {
+    @Override public int getModifiers() {
       return modifiers;
     }
 
-    public boolean nullable() {
+    @Override public boolean nullable() {
       return nullable;
     }
 
-    public Object get(Object o) {
+    @Override public Object get(Object o) {
       throw new UnsupportedOperationException();
     }
 
-    public Type getDeclaringClass() {
+    @Override public Type getDeclaringClass() {
       return syntheticType;
     }
   }
 }
-
-// End JavaTypeFactoryImpl.java

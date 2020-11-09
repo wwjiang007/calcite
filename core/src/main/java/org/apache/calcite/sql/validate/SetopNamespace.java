@@ -50,7 +50,7 @@ public class SetopNamespace extends AbstractNamespace {
 
   //~ Methods ----------------------------------------------------------------
 
-  public SqlNode getNode() {
+  @Override public SqlNode getNode() {
     return call;
   }
 
@@ -88,14 +88,14 @@ public class SetopNamespace extends AbstractNamespace {
     return SqlMonotonicity.NOT_MONOTONIC;
   }
 
-  public RelDataType validateImpl(RelDataType targetRowType) {
+  @Override public RelDataType validateImpl(RelDataType targetRowType) {
     switch (call.getKind()) {
     case UNION:
     case INTERSECT:
     case EXCEPT:
       final SqlValidatorScope scope = validator.scopes.get(call);
       for (SqlNode operand : call.getOperandList()) {
-        if (!(operand.isA(SqlKind.QUERY))) {
+        if (!operand.isA(SqlKind.QUERY)) {
           throw validator.newValidationError(operand,
               RESOURCE.needQueryOp(operand.toString()));
         }
@@ -110,5 +110,3 @@ public class SetopNamespace extends AbstractNamespace {
     }
   }
 }
-
-// End SetopNamespace.java

@@ -37,7 +37,7 @@ public class RelMdExplainVisibility
 
   //~ Methods ----------------------------------------------------------------
 
-  public MetadataDef<BuiltInMetadata.ExplainVisibility> getDef() {
+  @Override public MetadataDef<BuiltInMetadata.ExplainVisibility> getDef() {
     return BuiltInMetadata.ExplainVisibility.DEF;
   }
 
@@ -53,5 +53,3 @@ public class RelMdExplainVisibility
     return null;
   }
 }
-
-// End RelMdExplainVisibility.java

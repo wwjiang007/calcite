@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.sql.validate;
 
+
 /**
  * Enumeration of valid SQL compatibility modes.
  *
@@ -68,11 +69,31 @@ public interface SqlConformance {
   boolean isLiberal();
 
   /**
+   * Whether this dialect allows character literals as column aliases.
+   *
+   * <p>For example,
+   *
+   * <blockquote><pre>
+   *   SELECT empno, sal + comm AS 'remuneration'
+   *   FROM Emp</pre></blockquote>
+   *
+   * <p>Among the built-in conformance levels, true in
+   * {@link SqlConformanceEnum#BABEL},
+   * {@link SqlConformanceEnum#BIG_QUERY},
+   * {@link SqlConformanceEnum#LENIENT},
+   * {@link SqlConformanceEnum#MYSQL_5},
+   * {@link SqlConformanceEnum#SQL_SERVER_2008};
+   * false otherwise.
+   */
+  boolean allowCharLiteralAlias();
+
+  /**
    * Whether to allow aliases from the {@code SELECT} clause to be used as
    * column names in the {@code GROUP BY} clause.
    *
    * <p>Among the built-in conformance levels, true in
    * {@link SqlConformanceEnum#BABEL},
+   * {@link SqlConformanceEnum#BIG_QUERY},
    * {@link SqlConformanceEnum#LENIENT},
    * {@link SqlConformanceEnum#MYSQL_5};
    * false otherwise.
@@ -85,8 +106,10 @@ public interface SqlConformance {
    *
    * <p>Among the built-in conformance levels, true in
    * {@link SqlConformanceEnum#BABEL},
+   * {@link SqlConformanceEnum#BIG_QUERY},
    * {@link SqlConformanceEnum#LENIENT},
-   * {@link SqlConformanceEnum#MYSQL_5};
+   * {@link SqlConformanceEnum#MYSQL_5},
+   * {@link SqlConformanceEnum#PRESTO};
    * false otherwise.
    */
   boolean isGroupByOrdinal();
@@ -97,6 +120,7 @@ public interface SqlConformance {
    *
    * <p>Among the built-in conformance levels, true in
    * {@link SqlConformanceEnum#BABEL},
+   * {@link SqlConformanceEnum#BIG_QUERY},
    * {@link SqlConformanceEnum#LENIENT},
    * {@link SqlConformanceEnum#MYSQL_5};
    * false otherwise.
@@ -114,10 +138,11 @@ public interface SqlConformance {
    * {@link SqlConformanceEnum#MYSQL_5},
    * {@link SqlConformanceEnum#ORACLE_10},
    * {@link SqlConformanceEnum#ORACLE_12},
-   * {@link SqlConformanceEnum#STRICT_92},
    * {@link SqlConformanceEnum#PRAGMATIC_99},
-   * {@link SqlConformanceEnum#PRAGMATIC_2003};
-   * {@link SqlConformanceEnum#SQL_SERVER_2008};
+   * {@link SqlConformanceEnum#PRAGMATIC_2003},
+   * {@link SqlConformanceEnum#PRESTO},
+   * {@link SqlConformanceEnum#SQL_SERVER_2008},
+   * {@link SqlConformanceEnum#STRICT_92};
    * false otherwise.
    */
   boolean isSortByOrdinal();
@@ -133,8 +158,8 @@ public interface SqlConformance {
    * {@link SqlConformanceEnum#MYSQL_5},
    * {@link SqlConformanceEnum#ORACLE_10},
    * {@link SqlConformanceEnum#ORACLE_12},
+   * {@link SqlConformanceEnum#SQL_SERVER_2008},
    * {@link SqlConformanceEnum#STRICT_92};
-   * {@link SqlConformanceEnum#SQL_SERVER_2008};
    * false otherwise.
    */
   boolean isSortByAlias();
@@ -163,6 +188,28 @@ public interface SqlConformance {
   boolean isFromRequired();
 
   /**
+   * Whether to split a quoted table name. If true, {@code `x.y.z`} is parsed as
+   * if the user had written {@code `x`.`y`.`z`}.
+   *
+   * <p>Among the built-in conformance levels, true in
+   * {@link SqlConformanceEnum#BIG_QUERY};
+   * false otherwise.
+   */
+  boolean splitQuotedTableName();
+
+  /**
+   * Whether to allow hyphens in an unquoted table name.
+   *
+   * <p>If true, {@code SELECT * FROM foo-bar.baz-buzz} is valid, and is parsed
+   * as if the user had written {@code SELECT * FROM `foo-bar`.`baz-buzz`}.
+   *
+   * <p>Among the built-in conformance levels, true in
+   * {@link SqlConformanceEnum#BIG_QUERY};
+   * false otherwise.
+   */
+  boolean allowHyphenInUnquotedTableName();
+
+  /**
    * Whether the bang-equal token != is allowed as an alternative to &lt;&gt; in
    * the parser.
    *
@@ -170,8 +217,9 @@ public interface SqlConformance {
    * {@link SqlConformanceEnum#BABEL},
    * {@link SqlConformanceEnum#LENIENT},
    * {@link SqlConformanceEnum#MYSQL_5},
-   * {@link SqlConformanceEnum#ORACLE_10};
-   * {@link SqlConformanceEnum#ORACLE_12};
+   * {@link SqlConformanceEnum#ORACLE_10},
+   * {@link SqlConformanceEnum#ORACLE_12},
+   * {@link SqlConformanceEnum#PRESTO};
    * false otherwise.
    */
   boolean isBangEqualAllowed();
@@ -183,7 +231,8 @@ public interface SqlConformance {
    * <p>Among the built-in conformance levels, true in
    * {@link SqlConformanceEnum#BABEL},
    * {@link SqlConformanceEnum#LENIENT},
-   * {@link SqlConformanceEnum#MYSQL_5};
+   * {@link SqlConformanceEnum#MYSQL_5},
+   * {@link SqlConformanceEnum#PRESTO};
    * false otherwise.
    */
   boolean isPercentRemainderAllowed();
@@ -195,7 +244,7 @@ public interface SqlConformance {
    * <p>Among the built-in conformance levels, true in
    * {@link SqlConformanceEnum#BABEL},
    * {@link SqlConformanceEnum#LENIENT},
-   * {@link SqlConformanceEnum#ORACLE_10};
+   * {@link SqlConformanceEnum#ORACLE_10},
    * {@link SqlConformanceEnum#ORACLE_12};
    * false otherwise.
    *
@@ -223,8 +272,8 @@ public interface SqlConformance {
    * <p>Among the built-in conformance levels, true in
    * {@link SqlConformanceEnum#BABEL},
    * {@link SqlConformanceEnum#LENIENT},
+   * {@link SqlConformanceEnum#ORACLE_12},
    * {@link SqlConformanceEnum#SQL_SERVER_2008};
-   * {@link SqlConformanceEnum#ORACLE_12};
    * false otherwise.
    */
   boolean isApplyAllowed();
@@ -250,6 +299,23 @@ public interface SqlConformance {
    * false otherwise.
    */
   boolean isInsertSubsetColumnsAllowed();
+
+  /**
+   * Whether directly alias array items in UNNEST.
+   *
+   * <p>E.g. in UNNEST(a_array, b_array) AS T(a, b),
+   * a and b will be aliases of elements in a_array and b_array
+   * respectively.
+   *
+   * <p>Without this flag set, T will be the alias
+   * of the element in a_array and a, b will be the top level
+   * fields of T if T is a STRUCT type.
+   *
+   * <p>Among the built-in conformance levels, true in
+   * {@link SqlConformanceEnum#PRESTO};
+   * false otherwise.
+   */
+  boolean allowAliasUnnestItems();
 
   /**
    * Whether to allow parentheses to be specified in calls to niladic functions
@@ -290,7 +356,8 @@ public interface SqlConformance {
    *
    * <p>Among the built-in conformance levels, true in
    * {@link SqlConformanceEnum#DEFAULT},
-   * {@link SqlConformanceEnum#LENIENT};
+   * {@link SqlConformanceEnum#LENIENT},
+   * {@link SqlConformanceEnum#PRESTO};
    * false otherwise.
    */
   boolean allowExplicitRowValueConstructor();
@@ -340,6 +407,7 @@ public interface SqlConformance {
    * {@link SqlConformanceEnum#BABEL},
    * {@link SqlConformanceEnum#LENIENT},
    * {@link SqlConformanceEnum#MYSQL_5},
+   * {@link SqlConformanceEnum#PRESTO},
    * {@link SqlConformanceEnum#SQL_SERVER_2008};
    * false otherwise.
    */
@@ -365,9 +433,10 @@ public interface SqlConformance {
    * <p>Among the built-in conformance levels, true in
    * {@link SqlConformanceEnum#PRAGMATIC_99},
    * {@link SqlConformanceEnum#PRAGMATIC_2003},
-   * {@link SqlConformanceEnum#MYSQL_5};
-   * {@link SqlConformanceEnum#ORACLE_10};
-   * {@link SqlConformanceEnum#ORACLE_12};
+   * {@link SqlConformanceEnum#MYSQL_5},
+   * {@link SqlConformanceEnum#ORACLE_10},
+   * {@link SqlConformanceEnum#ORACLE_12},
+   * {@link SqlConformanceEnum#PRESTO},
    * {@link SqlConformanceEnum#SQL_SERVER_2008};
    * false otherwise.
    */
@@ -393,6 +462,45 @@ public interface SqlConformance {
    * false otherwise.
    */
   boolean allowExtendedTrim();
-}
 
-// End SqlConformance.java
+  /**
+   * Whether interval literals should allow plural time units
+   * such as "YEARS" and "DAYS" in interval literals.
+   *
+   * <p>Under strict behavior, {@code INTERVAL '2' DAY} is valid
+   * and {@code INTERVAL '2' DAYS} is invalid;
+   * PostgreSQL allows both; Oracle only allows singular time units.
+   *
+   * <p>Among the built-in conformance levels, true in
+   * {@link SqlConformanceEnum#BABEL},
+   * {@link SqlConformanceEnum#LENIENT};
+   * false otherwise.
+   */
+  boolean allowPluralTimeUnits();
+
+  /**
+   * Whether to allow a qualified common column in a query that has a
+   * NATURAL join or a join with a USING clause.
+   *
+   * <p>For example, in the query
+   *
+   * <blockquote><pre>SELECT emp.deptno
+   * FROM emp
+   * JOIN dept USING (deptno)</pre></blockquote>
+   *
+   * <p>{@code deptno} is the common column. A qualified common column
+   * such as {@code emp.deptno} is not allowed in Oracle, but is allowed
+   * in PostgreSQL.
+   *
+   * <p>Among the built-in conformance levels, false in
+   * {@link SqlConformanceEnum#ORACLE_10},
+   * {@link SqlConformanceEnum#ORACLE_12},
+   * {@link SqlConformanceEnum#PRESTO},
+   * {@link SqlConformanceEnum#STRICT_92},
+   * {@link SqlConformanceEnum#STRICT_99},
+   * {@link SqlConformanceEnum#STRICT_2003};
+   * true otherwise.
+   */
+  boolean allowQualifyingCommonColumn();
+
+}

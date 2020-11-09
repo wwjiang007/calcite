@@ -22,13 +22,15 @@ import org.apache.calcite.avatica.util.TimeUnitRange;
 import org.apache.calcite.config.NullCollation;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
+import org.apache.calcite.rel.type.RelDataTypeSystemImpl;
+import org.apache.calcite.sql.SqlAlienSystemTypeNameSpec;
 import org.apache.calcite.sql.SqlBasicCall;
+import org.apache.calcite.sql.SqlBasicTypeNameSpec;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlFunctionCategory;
-import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlIntervalQualifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlLiteral;
@@ -42,17 +44,40 @@ import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.InferTypes;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
+import org.apache.calcite.sql.type.SqlTypeName;
+
+import static org.apache.calcite.sql.type.SqlTypeName.TIMESTAMP;
 
 /**
  * A <code>SqlDialect</code> implementation for the MySQL database.
  */
 public class MysqlSqlDialect extends SqlDialect {
-  public static final SqlDialect DEFAULT =
-      new MysqlSqlDialect(EMPTY_CONTEXT
-          .withDatabaseProduct(DatabaseProduct.MYSQL)
-          .withIdentifierQuoteString("`")
-          .withUnquotedCasing(Casing.UNCHANGED)
-          .withNullCollation(NullCollation.LOW));
+
+  /** MySQL type system. */
+  public static final RelDataTypeSystem MYSQL_TYPE_SYSTEM =
+      new RelDataTypeSystemImpl() {
+        @Override public int getMaxPrecision(SqlTypeName typeName) {
+          switch (typeName) {
+          case CHAR:
+            return 255;
+          case VARCHAR:
+            return 65535;
+          case TIMESTAMP:
+            return 6;
+          default:
+            return super.getMaxPrecision(typeName);
+          }
+        }
+      };
+
+  public static final SqlDialect.Context DEFAULT_CONTEXT = SqlDialect.EMPTY_CONTEXT
+      .withDatabaseProduct(SqlDialect.DatabaseProduct.MYSQL)
+      .withIdentifierQuoteString("`")
+      .withDataTypeSystem(MYSQL_TYPE_SYSTEM)
+      .withUnquotedCasing(Casing.UNCHANGED)
+      .withNullCollation(NullCollation.LOW);
+
+  public static final SqlDialect DEFAULT = new MysqlSqlDialect(DEFAULT_CONTEXT);
 
   /** MySQL specific function. */
   public static final SqlFunction ISNULL_FUNCTION =
@@ -69,6 +94,15 @@ public class MysqlSqlDialect extends SqlDialect {
   }
 
   @Override public boolean supportsCharSet() {
+    return false;
+  }
+
+  @Override public boolean requiresAliasForFromItems() {
+    return true;
+  }
+
+  @Override public boolean supportsAliasedValues() {
+    // MySQL supports VALUES only in INSERT; not in a FROM clause
     return false;
   }
 
@@ -95,6 +129,8 @@ public class MysqlSqlDialect extends SqlDialect {
       // MySQL 5 does not support standard "GROUP BY ROLLUP(x, y)",
       // only the non-standard "GROUP BY x, y WITH ROLLUP".
       return majorVersion >= 8;
+    default:
+      break;
     }
     return false;
   }
@@ -115,12 +151,31 @@ public class MysqlSqlDialect extends SqlDialect {
     switch (type.getSqlTypeName()) {
     case VARCHAR:
       // MySQL doesn't have a VARCHAR type, only CHAR.
-      return new SqlDataTypeSpec(new SqlIdentifier("CHAR", SqlParserPos.ZERO),
-          type.getPrecision(), -1, null, null, SqlParserPos.ZERO);
+      int vcMaxPrecision = this.getTypeSystem().getMaxPrecision(SqlTypeName.CHAR);
+      int precision = type.getPrecision();
+      if (vcMaxPrecision > 0 && precision > vcMaxPrecision) {
+        precision = vcMaxPrecision;
+      }
+      return new SqlDataTypeSpec(
+          new SqlBasicTypeNameSpec(SqlTypeName.CHAR, precision, SqlParserPos.ZERO),
+          SqlParserPos.ZERO);
     case INTEGER:
     case BIGINT:
-      return new SqlDataTypeSpec(new SqlIdentifier("_SIGNED", SqlParserPos.ZERO),
-          type.getPrecision(), -1, null, null, SqlParserPos.ZERO);
+      return new SqlDataTypeSpec(
+          new SqlAlienSystemTypeNameSpec(
+              "SIGNED",
+              type.getSqlTypeName(),
+              SqlParserPos.ZERO),
+          SqlParserPos.ZERO);
+    case TIMESTAMP:
+      return new SqlDataTypeSpec(
+          new SqlAlienSystemTypeNameSpec(
+              "DATETIME",
+              type.getSqlTypeName(),
+              SqlParserPos.ZERO),
+          SqlParserPos.ZERO);
+    default:
+      break;
     }
     return super.getCastSpec(type);
   }
@@ -129,7 +184,8 @@ public class MysqlSqlDialect extends SqlDialect {
     final SqlNode operand = ((SqlBasicCall) aggCall).operand(0);
     final SqlLiteral nullLiteral = SqlLiteral.createNull(SqlParserPos.ZERO);
     final SqlNode unionOperand = new SqlSelect(SqlParserPos.ZERO, SqlNodeList.EMPTY,
-        SqlNodeList.of(nullLiteral), null, null, null, null, SqlNodeList.EMPTY, null, null, null);
+        SqlNodeList.of(nullLiteral), null, null, null, null,
+        SqlNodeList.EMPTY, null, null, null, SqlNodeList.EMPTY);
     // For MySQL, generate
     //   CASE COUNT(*)
     //   WHEN 0 THEN NULL
@@ -283,5 +339,3 @@ public class MysqlSqlDialect extends SqlDialect {
     }
   }
 }
-
-// End MysqlSqlDialect.java

@@ -16,7 +16,6 @@
  */
 package org.apache.calcite.util;
 
-import org.apache.calcite.linq4j.function.Function1;
 import org.apache.calcite.linq4j.function.Functions;
 import org.apache.calcite.runtime.FlatLists;
 import org.apache.calcite.util.mapping.Mappings;
@@ -27,6 +26,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.UnmodifiableListIterator;
 
 import java.lang.reflect.Array;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -128,11 +128,11 @@ public class ImmutableIntList extends FlatLists.AbstractFlatList<Integer> {
     return ints.length == 0;
   }
 
-  public int size() {
+  @Override public int size() {
     return ints.length;
   }
 
-  public Object[] toArray() {
+  @Override public Object[] toArray() {
     final Object[] objects = new Object[ints.length];
     for (int i = 0; i < objects.length; i++) {
       objects[i] = ints[i];
@@ -140,7 +140,7 @@ public class ImmutableIntList extends FlatLists.AbstractFlatList<Integer> {
     return objects;
   }
 
-  public <T> T[] toArray(T[] a) {
+  @Override public <T> T[] toArray(T[] a) {
     final int size = ints.length;
     if (a.length < size) {
       // Make a new array of a's runtime type, but my contents:
@@ -151,7 +151,7 @@ public class ImmutableIntList extends FlatLists.AbstractFlatList<Integer> {
     }
     if ((Class) a.getClass() == Integer[].class) {
       final Integer[] integers = (Integer[]) a;
-      for (int i = 0; i < integers.length; i++) {
+      for (int i = 0; i < size; i++) {
         integers[i] = ints[i];
       }
     } else {
@@ -168,7 +168,16 @@ public class ImmutableIntList extends FlatLists.AbstractFlatList<Integer> {
     return ints.clone();
   }
 
-  public Integer get(int index) {
+  /** Returns an List of {@code Integer}. */
+  public List<Integer> toIntegerList() {
+    ArrayList<Integer> arrayList = new ArrayList<>(size());
+    for (int i : ints) {
+      arrayList.add(i);
+    }
+    return arrayList;
+  }
+
+  @Override public Integer get(int index) {
     return ints[index];
   }
 
@@ -186,13 +195,13 @@ public class ImmutableIntList extends FlatLists.AbstractFlatList<Integer> {
 
   @Override public ListIterator<Integer> listIterator(int index) {
     return new AbstractIndexedListIterator<Integer>(size(), index) {
-      protected Integer get(int index) {
+      @Override protected Integer get(int index) {
         return ImmutableIntList.this.get(index);
       }
     };
   }
 
-  public int indexOf(Object o) {
+  @Override public int indexOf(Object o) {
     if (o instanceof Integer) {
       return indexOf((int) (Integer) o);
     }
@@ -208,7 +217,7 @@ public class ImmutableIntList extends FlatLists.AbstractFlatList<Integer> {
     return -1;
   }
 
-  public int lastIndexOf(Object o) {
+  @Override public int lastIndexOf(Object o) {
     if (o instanceof Integer) {
       return lastIndexOf((int) (Integer) o);
     }
@@ -242,14 +251,7 @@ public class ImmutableIntList extends FlatLists.AbstractFlatList<Integer> {
    *
    * <p>For example, {@code range(1, 3)} contains [1, 2]. */
   public static List<Integer> range(final int lower, final int upper) {
-    return Functions.generate(upper - lower,
-        new Function1<Integer, Integer>() {
-          /** @see Bug#upgrade(String) Upgrade to {@code IntFunction} when we
-           * drop support for JDK 1.7 */
-          public Integer apply(Integer index) {
-            return lower + index;
-          }
-        });
+    return Functions.generate(upper - lower, index -> lower + index);
   }
 
   /** Returns the identity list [0, ..., count - 1].
@@ -270,6 +272,18 @@ public class ImmutableIntList extends FlatLists.AbstractFlatList<Integer> {
       return this;
     }
     return ImmutableIntList.copyOf(Iterables.concat(this, list));
+  }
+
+  /**
+   * Increments {@code offset} to each element of the list and
+   * returns a new int list.
+   */
+  public ImmutableIntList incr(int offset) {
+    final int[] integers = new int[ints.length];
+    for (int i = 0; i < ints.length; i++) {
+      integers[i] = ints[i] + offset;
+    }
+    return new ImmutableIntList(integers);
   }
 
   /** Special sub-class of {@link ImmutableIntList} that is always
@@ -312,36 +326,34 @@ public class ImmutableIntList extends FlatLists.AbstractFlatList<Integer> {
       this.position = position;
     }
 
-    public final boolean hasNext() {
+    @Override public final boolean hasNext() {
       return position < size;
     }
 
-    public final E next() {
+    @Override public final E next() {
       if (!hasNext()) {
         throw new NoSuchElementException();
       }
       return get(position++);
     }
 
-    public final int nextIndex() {
+    @Override public final int nextIndex() {
       return position;
     }
 
-    public final boolean hasPrevious() {
+    @Override public final boolean hasPrevious() {
       return position > 0;
     }
 
-    public final E previous() {
+    @Override public final E previous() {
       if (!hasPrevious()) {
         throw new NoSuchElementException();
       }
       return get(--position);
     }
 
-    public final int previousIndex() {
+    @Override public final int previousIndex() {
       return position - 1;
     }
   }
 }
-
-// End ImmutableIntList.java

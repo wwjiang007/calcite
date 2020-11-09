@@ -175,14 +175,12 @@ public class LoptJoinTree {
       this.id = rootId;
     }
 
-    /**
-     * @return the id associated with a leaf node in a binary tree
-     */
+    /** Returns the id associated with a leaf node in a binary tree. */
     public int getId() {
       return id;
     }
 
-    public void getTreeOrder(List<Integer> treeOrder) {
+    @Override public void getTreeOrder(List<Integer> treeOrder) {
       treeOrder.add(id);
     }
   }
@@ -206,11 +204,9 @@ public class LoptJoinTree {
       return right;
     }
 
-    public void getTreeOrder(List<Integer> treeOrder) {
+    @Override public void getTreeOrder(List<Integer> treeOrder) {
       left.getTreeOrder(treeOrder);
       right.getTreeOrder(treeOrder);
     }
   }
 }
-
-// End LoptJoinTree.java

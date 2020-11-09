@@ -183,9 +183,7 @@ public interface RelDataTypeFactory {
       Charset charset,
       SqlCollation collation);
 
-  /**
-   * @return the default {@link Charset} for string types
-   */
+  /** Returns the default {@link Charset} (valid if this is a string type). */
   Charset getDefaultCharset();
 
   /**
@@ -270,7 +268,10 @@ public interface RelDataTypeFactory {
    * @param type2 type of the second operand
    * @return the result type for a decimal multiplication, or null if decimal
    * multiplication should not be applied to the operands.
+   * @deprecated Use
+   * {@link RelDataTypeSystem#deriveDecimalMultiplyType(RelDataTypeFactory, RelDataType, RelDataType)}
    */
+  @Deprecated // to be removed before 2.0
   RelDataType createDecimalProduct(
       RelDataType type1,
       RelDataType type2);
@@ -280,7 +281,11 @@ public interface RelDataTypeFactory {
    * arguments to double values.
    *
    * <p>Pre-condition: <code>createDecimalProduct(type1, type2) != null</code>
+   *
+   * @deprecated Use
+   * {@link RelDataTypeSystem#shouldUseDoubleMultiplication(RelDataTypeFactory, RelDataType, RelDataType)}
    */
+  @Deprecated // to be removed before 2.0
   boolean useDoubleMultiplication(
       RelDataType type1,
       RelDataType type2);
@@ -294,10 +299,24 @@ public interface RelDataTypeFactory {
    * @param type2 type of the second operand
    * @return the result type for a decimal division, or null if decimal
    * division should not be applied to the operands.
+   *
+   * @deprecated Use
+   * {@link RelDataTypeSystem#deriveDecimalDivideType(RelDataTypeFactory, RelDataType, RelDataType)}
    */
+  @Deprecated // to be removed before 2.0
   RelDataType createDecimalQuotient(
       RelDataType type1,
       RelDataType type2);
+
+  /**
+   * Create a decimal type equivalent to the numeric {@code type},
+   * this is related to specific system implementation,
+   * you can override this logic if it is required.
+   *
+   * @param type the numeric type to create decimal type with
+   * @return decimal equivalence of the numeric type.
+   */
+  RelDataType decimalOf(RelDataType type);
 
   /**
    * Creates a
@@ -402,6 +421,7 @@ public interface RelDataTypeFactory {
     private final List<RelDataType> types = new ArrayList<>();
     private StructKind kind = StructKind.FULLY_QUALIFIED;
     private final RelDataTypeFactory typeFactory;
+    private boolean nullableRecord = false;
 
     /**
      * Creates a Builder with the given type factory.
@@ -528,6 +548,12 @@ public interface RelDataTypeFactory {
       return this;
     }
 
+    /** Sets whether the record type will be nullable. */
+    public Builder nullableRecord(boolean nullableRecord) {
+      this.nullableRecord = nullableRecord;
+      return this;
+    }
+
     /**
      * Makes sure that field names are unique.
      */
@@ -545,7 +571,9 @@ public interface RelDataTypeFactory {
      * Creates a struct type with the current contents of this builder.
      */
     public RelDataType build() {
-      return typeFactory.createStructType(kind, types, names);
+      return typeFactory.createTypeWithNullability(
+          typeFactory.createStructType(kind, types, names),
+          nullableRecord);
     }
 
     /** Creates a dynamic struct type with the current contents of this
@@ -563,5 +591,3 @@ public interface RelDataTypeFactory {
     }
   }
 }
-
-// End RelDataTypeFactory.java

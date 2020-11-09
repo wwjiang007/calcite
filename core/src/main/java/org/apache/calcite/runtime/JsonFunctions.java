@@ -29,6 +29,7 @@ import com.fasterxml.jackson.core.util.DefaultIndenter;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.DocumentContext;
+import com.jayway.jsonpath.InvalidPathException;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.Option;
 import com.jayway.jsonpath.spi.json.JacksonJsonProvider;
@@ -112,18 +113,22 @@ public class JsonFunctions {
   }
 
   public static JsonPathContext jsonApiCommonSyntax(JsonValueContext input, String pathSpec) {
+    PathMode mode;
+    String pathStr;
     try {
       Matcher matcher = JSON_PATH_BASE.matcher(pathSpec);
       if (!matcher.matches()) {
-        throw RESOURCE.illegalJsonPathSpec(pathSpec).ex();
+        mode = PathMode.STRICT;
+        pathStr = pathSpec;
+      } else {
+        mode = PathMode.valueOf(matcher.group(1).toUpperCase(Locale.ROOT));
+        pathStr = matcher.group(2);
       }
-      PathMode mode = PathMode.valueOf(matcher.group(1).toUpperCase(Locale.ROOT));
-      String pathWff = matcher.group(2);
       DocumentContext ctx;
       switch (mode) {
       case STRICT:
         if (input.hasException()) {
-          return JsonPathContext.withStrictException(input.exc);
+          return JsonPathContext.withStrictException(pathSpec, input.exc);
         }
         ctx = JsonPath.parse(input.obj,
             Configuration
@@ -148,9 +153,9 @@ public class JsonFunctions {
         throw RESOURCE.illegalJsonPathModeInPathSpec(mode.toString(), pathSpec).ex();
       }
       try {
-        return JsonPathContext.withJavaObj(mode, ctx.read(pathWff));
+        return JsonPathContext.withJavaObj(mode, ctx.read(pathStr));
       } catch (Exception e) {
-        return JsonPathContext.withStrictException(e);
+        return JsonPathContext.withStrictException(pathSpec, e);
       }
     } catch (Exception e) {
       return JsonPathContext.withUnknownException(e);
@@ -200,13 +205,13 @@ public class JsonFunctions {
     }
   }
 
-  public static Object jsonValueAny(String input,
+  public static Object jsonValue(String input,
       String pathSpec,
       SqlJsonValueEmptyOrErrorBehavior emptyBehavior,
       Object defaultValueOnEmpty,
       SqlJsonValueEmptyOrErrorBehavior errorBehavior,
       Object defaultValueOnError) {
-    return jsonValueAny(
+    return jsonValue(
         jsonApiCommonSyntax(input, pathSpec),
         emptyBehavior,
         defaultValueOnEmpty,
@@ -214,13 +219,13 @@ public class JsonFunctions {
         defaultValueOnError);
   }
 
-  public static Object jsonValueAny(JsonValueContext input,
+  public static Object jsonValue(JsonValueContext input,
       String pathSpec,
       SqlJsonValueEmptyOrErrorBehavior emptyBehavior,
       Object defaultValueOnEmpty,
       SqlJsonValueEmptyOrErrorBehavior errorBehavior,
       Object defaultValueOnError) {
-    return jsonValueAny(
+    return jsonValue(
         jsonApiCommonSyntax(input, pathSpec),
         emptyBehavior,
         defaultValueOnEmpty,
@@ -228,7 +233,7 @@ public class JsonFunctions {
         defaultValueOnError);
   }
 
-  public static Object jsonValueAny(JsonPathContext context,
+  public static Object jsonValue(JsonPathContext context,
       SqlJsonValueEmptyOrErrorBehavior emptyBehavior,
       Object defaultValueOnEmpty,
       SqlJsonValueEmptyOrErrorBehavior errorBehavior,
@@ -434,7 +439,7 @@ public class JsonFunctions {
       return JSON_PATH_JSON_PROVIDER.getObjectMapper().writer(JSON_PRETTY_PRINTER)
           .writeValueAsString(input.obj);
     } catch (Exception e) {
-      throw RESOURCE.exceptionWhileSerializingToJson(Objects.toString(input.obj)).ex();
+      throw RESOURCE.exceptionWhileSerializingToJson(Objects.toString(input.obj)).ex(e);
     }
   }
 
@@ -471,7 +476,7 @@ public class JsonFunctions {
       }
       return result;
     } catch (Exception ex) {
-      throw RESOURCE.invalidInputForJsonType(val.toString()).ex();
+      throw RESOURCE.invalidInputForJsonType(val.toString()).ex(ex);
     }
   }
 
@@ -490,14 +495,17 @@ public class JsonFunctions {
       }
       return result;
     } catch (Exception ex) {
-      throw RESOURCE.invalidInputForJsonDepth(o.toString()).ex();
+      throw RESOURCE.invalidInputForJsonDepth(o.toString()).ex(ex);
     }
   }
 
+  @SuppressWarnings("JdkObsolete")
   private static Integer calculateDepth(Object o) {
     if (isScalarObject(o)) {
       return 1;
     }
+    // Note: even even though LinkedList implements Queue, it supports null values
+    //
     Queue<Object> q = new LinkedList<>();
     int depth = 0;
     q.add(o);
@@ -561,7 +569,7 @@ public class JsonFunctions {
       }
     } catch (Exception ex) {
       throw RESOURCE.invalidInputForJsonLength(
-          context.toString()).ex();
+          context.toString()).ex(ex);
     }
     return result;
   }
@@ -601,7 +609,7 @@ public class JsonFunctions {
       }
     } catch (Exception ex) {
       throw RESOURCE.invalidInputForJsonKeys(
-          context.toString()).ex();
+          context.toString()).ex(ex);
     }
     return jsonize(list);
   }
@@ -627,7 +635,20 @@ public class JsonFunctions {
       return ctx.jsonString();
     } catch (Exception ex) {
       throw RESOURCE.invalidInputForJsonRemove(
-          input.toString(), Arrays.toString(pathSpecs)).ex();
+          input.toString(), Arrays.toString(pathSpecs)).ex(ex);
+    }
+  }
+
+  public static Integer jsonStorageSize(String input) {
+    return jsonStorageSize(jsonValueExpression(input));
+  }
+
+  public static Integer jsonStorageSize(JsonValueContext input) {
+    try {
+      return JSON_PATH_JSON_PROVIDER.getObjectMapper()
+          .writeValueAsBytes(input.obj).length;
+    } catch (Exception e) {
+      throw RESOURCE.invalidInputForJsonStorageSize(Objects.toString(input.obj)).ex(e);
     }
   }
 
@@ -700,6 +721,13 @@ public class JsonFunctions {
 
     public static JsonPathContext withStrictException(Exception exc) {
       return new JsonPathContext(PathMode.STRICT, null, exc);
+    }
+
+    public static JsonPathContext withStrictException(String pathSpec, Exception exc) {
+      if (exc.getClass() == InvalidPathException.class) {
+        exc = RESOURCE.illegalJsonPathSpec(pathSpec).ex();
+      }
+      return withStrictException(exc);
     }
 
     public static JsonPathContext withJavaObj(PathMode mode, Object obj) {
@@ -779,5 +807,3 @@ public class JsonFunctions {
     NONE
   }
 }
-
-// End JsonFunctions.java

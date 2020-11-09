@@ -26,8 +26,8 @@ import java.util.List;
 /**
  * A binary (or hexadecimal) string literal.
  *
- * <p>The {@link #value} field is a {@link BitString} and {@link #typeName} is
- * {@link SqlTypeName#BINARY}.
+ * <p>The {@link #value} field is a {@link BitString} and {@link #getTypeName()}
+ * is {@link SqlTypeName#BINARY}.
  */
 public class SqlBinaryStringLiteral extends SqlAbstractStringLiteral {
 
@@ -41,9 +41,11 @@ public class SqlBinaryStringLiteral extends SqlAbstractStringLiteral {
 
   //~ Methods ----------------------------------------------------------------
 
-  /**
-   * @return the underlying BitString
+  /** Returns the underlying {@link BitString}.
+   *
+   * @deprecated Use {@link SqlLiteral#getValueAs getValueAs(BitString.class)}
    */
+  @Deprecated // to be removed before 2.0
   public BitString getBitString() {
     return (BitString) value;
   }
@@ -52,7 +54,7 @@ public class SqlBinaryStringLiteral extends SqlAbstractStringLiteral {
     return new SqlBinaryStringLiteral((BitString) value, pos);
   }
 
-  public void unparse(
+  @Override public void unparse(
       SqlWriter writer,
       int leftPrec,
       int rightPrec) {
@@ -60,13 +62,11 @@ public class SqlBinaryStringLiteral extends SqlAbstractStringLiteral {
     writer.literal("X'" + ((BitString) value).toHexString() + "'");
   }
 
-  protected SqlAbstractStringLiteral concat1(List<SqlLiteral> literals) {
+  @Override protected SqlAbstractStringLiteral concat1(List<SqlLiteral> literals) {
     return new SqlBinaryStringLiteral(
         BitString.concat(
             Util.transform(literals,
-                literal -> ((SqlBinaryStringLiteral) literal).getBitString())),
+                literal -> literal.getValueAs(BitString.class))),
         literals.get(0).getParserPosition());
   }
 }
-
-// End SqlBinaryStringLiteral.java

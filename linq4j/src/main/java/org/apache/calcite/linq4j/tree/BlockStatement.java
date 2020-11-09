@@ -28,9 +28,7 @@ import java.util.Set;
  */
 public class BlockStatement extends Statement {
   public final List<Statement> statements;
-  /**
-   * Cache the hash code for the expression
-   */
+  /** Cached hash code for the expression. */
   private int hash;
 
   BlockStatement(List<Statement> statements, Type type) {
@@ -61,7 +59,7 @@ public class BlockStatement extends Statement {
     return shuttle.visit(this, newStatements);
   }
 
-  public <R> R accept(Visitor<R> visitor) {
+  @Override public <R> R accept(Visitor<R> visitor) {
     return visitor.visit(this);
   }
 
@@ -117,5 +115,3 @@ public class BlockStatement extends Statement {
     return result;
   }
 }
-
-// End BlockStatement.java

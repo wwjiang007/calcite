@@ -25,11 +25,12 @@ import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.Exchange;
 import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Join;
-import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.Sort;
+import org.apache.calcite.rel.core.TableModify;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.core.Union;
+import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexInputRef;
@@ -37,13 +38,13 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexTableInputRef;
 import org.apache.calcite.rex.RexTableInputRef.RelTableRef;
 import org.apache.calcite.rex.RexUtil;
+import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.util.BuiltInMethod;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.Util;
 
 import com.google.common.collect.HashMultimap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Multimap;
 
 import java.util.Collection;
@@ -76,7 +77,7 @@ public class RelMdAllPredicates
   public static final RelMetadataProvider SOURCE = ReflectiveRelMetadataProvider
       .reflectiveSource(BuiltInMethod.ALL_PREDICATES.method, new RelMdAllPredicates());
 
-  public MetadataDef<BuiltInMetadata.AllPredicates> getDef() {
+  @Override public MetadataDef<BuiltInMetadata.AllPredicates> getDef() {
     return BuiltInMetadata.AllPredicates.DEF;
   }
 
@@ -102,7 +103,12 @@ public class RelMdAllPredicates
   /**
    * Extract predicates for a table scan.
    */
-  public RelOptPredicateList getAllPredicates(TableScan table, RelMetadataQuery mq) {
+  public RelOptPredicateList getAllPredicates(TableScan scan, RelMetadataQuery mq) {
+    final BuiltInMetadata.AllPredicates.Handler handler =
+        scan.getTable().unwrap(BuiltInMetadata.AllPredicates.Handler.class);
+    if (handler != null) {
+      return handler.getAllPredicates(scan, mq);
+    }
     return RelOptPredicateList.EMPTY;
   }
 
@@ -131,7 +137,7 @@ public class RelMdAllPredicates
     final Set<RelDataTypeField> inputExtraFields = new LinkedHashSet<>();
     final RelOptUtil.InputFinder inputFinder = new RelOptUtil.InputFinder(inputExtraFields);
     pred.accept(inputFinder);
-    final ImmutableBitSet inputFieldsUsed = inputFinder.inputBitSet.build();
+    final ImmutableBitSet inputFieldsUsed = inputFinder.build();
 
     // Infer column origin expressions for given references
     final Map<RexInputRef, Set<RexNode>> mapping = new LinkedHashMap<>();
@@ -158,7 +164,7 @@ public class RelMdAllPredicates
    * Add the Join condition to the list obtained from the input.
    */
   public RelOptPredicateList getAllPredicates(Join join, RelMetadataQuery mq) {
-    if (join.getJoinType() != JoinRelType.INNER) {
+    if (join.getJoinType().isOuterJoin()) {
       // We cannot map origin of this expression.
       return null;
     }
@@ -196,10 +202,10 @@ public class RelMdAllPredicates
           currentTablesMapping.put(rightRef,
               RelTableRef.of(rightRef.getTable(), shift + rightRef.getEntityNumber()));
         }
-        final List<RexNode> updatedPreds = Lists.newArrayList(
-            Iterables.transform(inputPreds.pulledUpPredicates,
+        final List<RexNode> updatedPreds =
+            Util.transform(inputPreds.pulledUpPredicates,
                 e -> RexUtil.swapTableReferences(rexBuilder, e,
-                    currentTablesMapping)));
+                    currentTablesMapping));
         newPreds = newPreds.union(rexBuilder,
             RelOptPredicateList.of(rexBuilder, updatedPreds));
       }
@@ -209,18 +215,24 @@ public class RelMdAllPredicates
     final Set<RelDataTypeField> inputExtraFields = new LinkedHashSet<>();
     final RelOptUtil.InputFinder inputFinder = new RelOptUtil.InputFinder(inputExtraFields);
     pred.accept(inputFinder);
-    final ImmutableBitSet inputFieldsUsed = inputFinder.inputBitSet.build();
+    final ImmutableBitSet inputFieldsUsed = inputFinder.build();
 
     // Infer column origin expressions for given references
     final Map<RexInputRef, Set<RexNode>> mapping = new LinkedHashMap<>();
+    final RelDataType fullRowType = SqlValidatorUtil.createJoinType(
+        rexBuilder.getTypeFactory(),
+        join.getLeft().getRowType(),
+        join.getRight().getRowType(),
+        null,
+        ImmutableList.of());
     for (int idx : inputFieldsUsed) {
-      final RexInputRef inputRef = RexInputRef.of(idx, join.getRowType().getFieldList());
+      final RexInputRef inputRef = RexInputRef.of(idx, fullRowType.getFieldList());
       final Set<RexNode> originalExprs = mq.getExpressionLineage(join, inputRef);
       if (originalExprs == null) {
         // Bail out
         return null;
       }
-      final RexInputRef ref = RexInputRef.of(idx, join.getRowType().getFieldList());
+      final RexInputRef ref = RexInputRef.of(idx, fullRowType.getFieldList());
       mapping.put(ref, originalExprs);
     }
 
@@ -238,6 +250,13 @@ public class RelMdAllPredicates
    */
   public RelOptPredicateList getAllPredicates(Aggregate agg, RelMetadataQuery mq) {
     return mq.getAllPredicates(agg.getInput());
+  }
+
+  /**
+   * Extract predicates for an TableModify.
+   */
+  public RelOptPredicateList getAllPredicates(TableModify tableModify, RelMetadataQuery mq) {
+    return mq.getAllPredicates(tableModify.getInput());
   }
 
   /**
@@ -282,10 +301,10 @@ public class RelMdAllPredicates
           qualifiedNamesToRefs.put(newRef.getQualifiedName(), newRef);
         }
         // Update preds
-        final List<RexNode> updatedPreds = Lists.newArrayList(
-            Iterables.transform(inputPreds.pulledUpPredicates,
+        final List<RexNode> updatedPreds =
+            Util.transform(inputPreds.pulledUpPredicates,
                 e -> RexUtil.swapTableReferences(rexBuilder, e,
-                    currentTablesMapping)));
+                    currentTablesMapping));
         newPreds = newPreds.union(rexBuilder,
             RelOptPredicateList.of(rexBuilder, updatedPreds));
       }
@@ -309,5 +328,3 @@ public class RelMdAllPredicates
   }
 
 }
-
-// End RelMdAllPredicates.java

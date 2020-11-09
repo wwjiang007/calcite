@@ -71,7 +71,7 @@ public class TableMacroImpl extends ReflectiveFunctionBase
    * @param arguments Arguments
    * @return Table
    */
-  public TranslatableTable apply(List<Object> arguments) {
+  @Override public TranslatableTable apply(List<Object> arguments) {
     try {
       Object o = null;
       if (!Modifier.isStatic(method.getModifiers())) {
@@ -92,5 +92,3 @@ public class TableMacroImpl extends ReflectiveFunctionBase
     }
   }
 }
-
-// End TableMacroImpl.java

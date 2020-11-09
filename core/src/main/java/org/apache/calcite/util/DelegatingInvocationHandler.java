@@ -51,7 +51,7 @@ import java.lang.reflect.Method;
 public abstract class DelegatingInvocationHandler implements InvocationHandler {
   //~ Methods ----------------------------------------------------------------
 
-  public Object invoke(
+  @Override public Object invoke(
       Object proxy,
       Method method,
       Object[] args) throws Throwable {
@@ -87,5 +87,3 @@ public abstract class DelegatingInvocationHandler implements InvocationHandler {
    */
   protected abstract Object getTarget();
 }
-
-// End DelegatingInvocationHandler.java

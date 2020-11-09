@@ -27,12 +27,11 @@ import java.util.Objects;
  * an anonymous class.</p>
  */
 public class NewExpression extends Expression {
+  @SuppressWarnings("HidingField")
   public final Type type;
   public final List<Expression> arguments;
   public final List<MemberDeclaration> memberDeclarations;
-  /**
-   * Cache the hash code for the expression
-   */
+  /** Cached hash code for the expression. */
   private int hash;
 
   public NewExpression(Type type, List<Expression> arguments,
@@ -52,7 +51,7 @@ public class NewExpression extends Expression {
     return shuttle.visit(this, arguments, memberDeclarations);
   }
 
-  public <R> R accept(Visitor<R> visitor) {
+  @Override public <R> R accept(Visitor<R> visitor) {
     return visitor.visit(this);
   }
 
@@ -105,5 +104,3 @@ public class NewExpression extends Expression {
     return result;
   }
 }
-
-// End NewExpression.java

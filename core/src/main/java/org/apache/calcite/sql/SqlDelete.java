@@ -58,11 +58,11 @@ public class SqlDelete extends SqlCall {
     return SqlKind.DELETE;
   }
 
-  public SqlOperator getOperator() {
+  @Override public SqlOperator getOperator() {
     return OPERATOR;
   }
 
-  public List<SqlNode> getOperandList() {
+  @Override public List<SqlNode> getOperandList() {
     return ImmutableNullableList.of(targetTable, condition, alias);
   }
 
@@ -86,14 +86,14 @@ public class SqlDelete extends SqlCall {
   }
 
   /**
-   * @return the identifier for the target table of the deletion
+   * Returns the identifier for the target table of the deletion.
    */
   public SqlNode getTargetTable() {
     return targetTable;
   }
 
   /**
-   * @return the alias for the target table of the deletion
+   * Returns the alias for the target table of the deletion.
    */
   public SqlIdentifier getAlias() {
     return alias;
@@ -137,7 +137,7 @@ public class SqlDelete extends SqlCall {
     writer.endList(frame);
   }
 
-  public void validate(SqlValidator validator, SqlValidatorScope scope) {
+  @Override public void validate(SqlValidator validator, SqlValidatorScope scope) {
     validator.validateDelete(this);
   }
 
@@ -145,5 +145,3 @@ public class SqlDelete extends SqlCall {
     this.sourceSelect = sourceSelect;
   }
 }
-
-// End SqlDelete.java

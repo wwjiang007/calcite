@@ -42,7 +42,7 @@ public class RelMdMemory implements MetadataHandler<BuiltInMetadata.Memory> {
 
   //~ Methods ----------------------------------------------------------------
 
-  public MetadataDef<BuiltInMetadata.Memory> getDef() {
+  @Override public MetadataDef<BuiltInMetadata.Memory> getDef() {
     return BuiltInMetadata.Memory.DEF;
   }
 
@@ -100,5 +100,3 @@ public class RelMdMemory implements MetadataHandler<BuiltInMetadata.Memory> {
     return memoryWithinPhase / splitCount;
   }
 }
-
-// End RelMdMemory.java

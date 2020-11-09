@@ -39,7 +39,7 @@ public class BarfingInvocationHandler implements InvocationHandler {
 
   //~ Methods ----------------------------------------------------------------
 
-  public Object invoke(
+  @Override public Object invoke(
       Object proxy,
       Method method,
       Object[] args) throws Throwable {
@@ -85,5 +85,3 @@ public class BarfingInvocationHandler implements InvocationHandler {
     return new UnsupportedOperationException(signature);
   }
 }
-
-// End BarfingInvocationHandler.java

@@ -24,10 +24,12 @@ import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.core.TableScan;
-import org.apache.calcite.rel.rules.AggregateExpandDistinctAggregatesRule;
+import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.type.RelDataTypeField;
 
 import org.apache.pig.data.DataType;
+
+import com.google.common.collect.ImmutableList;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,7 +40,7 @@ public class PigTableScan extends TableScan implements PigRel {
 
   /** Creates a PigTableScan. */
   public PigTableScan(RelOptCluster cluster, RelTraitSet traitSet, RelOptTable table) {
-    super(cluster, traitSet, table);
+    super(cluster, traitSet, ImmutableList.of(), table);
     assert getConvention() == PigRel.CONVENTION;
   }
 
@@ -80,11 +82,9 @@ public class PigTableScan extends TableScan implements PigRel {
     }
     // Don't move Aggregates around, otherwise PigAggregate.implement() won't
     // know how to correctly procuce Pig Latin
-    planner.removeRule(AggregateExpandDistinctAggregatesRule.INSTANCE);
-    // Make sure planner picks PigJoin over EnumerableJoin. Should there be
+    planner.removeRule(CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES);
+    // Make sure planner picks PigJoin over EnumerableHashJoin. Should there be
     // a rule for this instead for removing ENUMERABLE_JOIN_RULE here?
     planner.removeRule(EnumerableRules.ENUMERABLE_JOIN_RULE);
   }
 }
-
-// End PigTableScan.java

@@ -37,8 +37,8 @@ public class RelWriterImpl implements RelWriter {
   //~ Instance fields --------------------------------------------------------
 
   protected final PrintWriter pw;
-  private final SqlExplainLevel detailLevel;
-  private final boolean withIdPrefix;
+  protected final SqlExplainLevel detailLevel;
+  protected final boolean withIdPrefix;
   protected final Spacer spacer = new Spacer();
   private final List<Pair<String, Object>> values = new ArrayList<>();
 
@@ -100,6 +100,9 @@ public class RelWriterImpl implements RelWriter {
           .append(mq.getRowCount(rel))
           .append(", cumulative cost = ")
           .append(mq.getCumulativeCost(rel));
+      break;
+    default:
+      break;
     }
     switch (detailLevel) {
     case NON_COST_ATTRIBUTES:
@@ -109,6 +112,8 @@ public class RelWriterImpl implements RelWriter {
         // it at the end.
         s.append(", id = ").append(rel.getId());
       }
+      break;
+    default:
       break;
     }
     pw.println(s);
@@ -123,20 +128,20 @@ public class RelWriterImpl implements RelWriter {
     }
   }
 
-  public final void explain(RelNode rel, List<Pair<String, Object>> valueList) {
+  @Override public final void explain(RelNode rel, List<Pair<String, Object>> valueList) {
     explain_(rel, valueList);
   }
 
-  public SqlExplainLevel getDetailLevel() {
+  @Override public SqlExplainLevel getDetailLevel() {
     return detailLevel;
   }
 
-  public RelWriter item(String term, Object value) {
+  @Override public RelWriter item(String term, Object value) {
     values.add(Pair.of(term, value));
     return this;
   }
 
-  public RelWriter done(RelNode node) {
+  @Override public RelWriter done(RelNode node) {
     assert checkInputsPresentInExplain(node);
     final List<Pair<String, Object>> valuesCopy =
         ImmutableList.copyOf(values);
@@ -174,5 +179,3 @@ public class RelWriterImpl implements RelWriter {
     return buf.toString();
   }
 }
-
-// End RelWriterImpl.java

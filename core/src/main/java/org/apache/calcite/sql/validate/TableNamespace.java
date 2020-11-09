@@ -54,7 +54,7 @@ class TableNamespace extends AbstractNamespace {
     this(validator, table, ImmutableList.of());
   }
 
-  protected RelDataType validateImpl(RelDataType targetRowType) {
+  @Override protected RelDataType validateImpl(RelDataType targetRowType) {
     if (extendedFields.isEmpty()) {
       return table.getRowType();
     }
@@ -65,7 +65,7 @@ class TableNamespace extends AbstractNamespace {
     return builder.build();
   }
 
-  public SqlNode getNode() {
+  @Override public SqlNode getNode() {
     // This is the only kind of namespace not based on a node in the parse tree.
     return null;
   }
@@ -93,12 +93,11 @@ class TableNamespace extends AbstractNamespace {
         ImmutableList.builder();
     builder.addAll(this.extendedFields);
     builder.addAll(
-        SqlValidatorUtil.getExtendedColumns(validator.getTypeFactory(),
+        SqlValidatorUtil.getExtendedColumns(validator,
             getTable(), extendList));
     final List<RelDataTypeField> extendedFields = builder.build();
     final Table schemaTable = table.unwrap(Table.class);
-    if (schemaTable != null
-        && table instanceof RelOptTable
+    if (table instanceof RelOptTable
         && (schemaTable instanceof ExtensibleTable
           || schemaTable instanceof ModifiableViewTable)) {
       checkExtendedColumnTypes(extendList);
@@ -112,8 +111,8 @@ class TableNamespace extends AbstractNamespace {
   }
 
   /**
-   * Gets the data-type of all columns in a table (for a view table: including
-   * columns of the underlying table)
+   * Gets the data-type of all columns in a table. For a view table, includes
+   * columns of the underlying table.
    */
   private RelDataType getBaseRowType() {
     final Table schemaTable = table.unwrap(Table.class);
@@ -132,8 +131,7 @@ class TableNamespace extends AbstractNamespace {
    */
   private void checkExtendedColumnTypes(SqlNodeList extendList) {
     final List<RelDataTypeField> extendedFields =
-        SqlValidatorUtil.getExtendedColumns(
-            validator.getTypeFactory(), table, extendList);
+        SqlValidatorUtil.getExtendedColumns(validator, table, extendList);
     final List<RelDataTypeField> baseFields =
         getBaseRowType().getFieldList();
     final Map<String, Integer> nameToIndex =
@@ -163,5 +161,3 @@ class TableNamespace extends AbstractNamespace {
     }
   }
 }
-
-// End TableNamespace.java

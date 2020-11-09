@@ -51,7 +51,7 @@ class WithItemNamespace extends AbstractNamespace {
     return builder.build();
   }
 
-  public SqlNode getNode() {
+  @Override public SqlNode getNode() {
     return withItem;
   }
 
@@ -72,5 +72,3 @@ class WithItemNamespace extends AbstractNamespace {
         + "' in rowtype " + underlyingRowType);
   }
 }
-
-// End WithItemNamespace.java

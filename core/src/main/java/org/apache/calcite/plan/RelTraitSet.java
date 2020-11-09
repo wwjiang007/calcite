@@ -16,8 +16,11 @@
  */
 package org.apache.calcite.plan;
 
-import org.apache.calcite.runtime.FlatLists;
-import org.apache.calcite.util.Pair;
+import org.apache.calcite.rel.RelCollation;
+import org.apache.calcite.rel.RelCollationTraitDef;
+import org.apache.calcite.rel.RelDistribution;
+import org.apache.calcite.rel.RelDistributionTraitDef;
+import org.apache.calcite.util.mapping.Mappings;
 
 import com.google.common.collect.ImmutableList;
 
@@ -38,7 +41,9 @@ public final class RelTraitSet extends AbstractList<RelTrait> {
 
   private final Cache cache;
   private final RelTrait[] traits;
-  private final String string;
+  private String string;
+  /** Caches the hash code for the traits. */
+  private int hash; // Default to 0
 
   //~ Constructors -----------------------------------------------------------
 
@@ -55,7 +60,6 @@ public final class RelTraitSet extends AbstractList<RelTrait> {
     //   the caller has made a copy.
     this.cache = cache;
     this.traits = traits;
-    this.string = computeString();
   }
 
   //~ Methods ----------------------------------------------------------------
@@ -101,7 +105,7 @@ public final class RelTraitSet extends AbstractList<RelTrait> {
     }
   }
 
-  public RelTrait get(int index) {
+  @Override public RelTrait get(int index) {
     return getTrait(index);
   }
 
@@ -236,6 +240,9 @@ public final class RelTraitSet extends AbstractList<RelTrait> {
       return this; // trait is not enabled; ignore it
     }
     final List<T> traitList = traitSupplier.get();
+    if (traitList == null) {
+      return replace(index, def.getDefault());
+    }
     return replace(index, RelCompositeTrait.of(def, traitList));
   }
 
@@ -246,8 +253,139 @@ public final class RelTraitSet extends AbstractList<RelTrait> {
     if (index < 0) {
       return this; // trait is not enabled; ignore it
     }
-    final T traitList = traitSupplier.get();
+    T traitList = traitSupplier.get();
+    if (traitList == null) {
+      traitList = def.getDefault();
+    }
     return replace(index, traitList);
+  }
+
+  /**
+   * Applies a mapping to this traitSet.
+   *
+   * @param mapping   Mapping
+   * @return traitSet with mapping applied
+   */
+  public RelTraitSet apply(Mappings.TargetMapping mapping) {
+    RelTrait[] newTraits = new RelTrait[traits.length];
+    for (int i = 0; i < traits.length; i++) {
+      newTraits[i] = traits[i].apply(mapping);
+    }
+    return cache.getOrAdd(new RelTraitSet(cache, newTraits));
+  }
+
+  /**
+   * Returns whether all the traits are default trait value.
+   */
+  public boolean isDefault() {
+    for (final RelTrait trait : traits) {
+      if (trait != trait.getTraitDef().getDefault()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Returns whether all the traits except {@link Convention}
+   * are default trait value.
+   */
+  public boolean isDefaultSansConvention() {
+    for (final RelTrait trait : traits) {
+      if (trait.getTraitDef() == ConventionTraitDef.INSTANCE) {
+        continue;
+      }
+      if (trait != trait.getTraitDef().getDefault()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Returns whether all the traits except {@link Convention}
+   * equals with traits in {@code other} traitSet.
+   */
+  public boolean equalsSansConvention(RelTraitSet other) {
+    if (this == other) {
+      return true;
+    }
+    if (this.size() != other.size()) {
+      return false;
+    }
+    for (int i = 0; i < traits.length; i++) {
+      if (traits[i].getTraitDef() == ConventionTraitDef.INSTANCE) {
+        continue;
+      }
+      // each trait should be canonized already
+      if (traits[i] != other.traits[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Returns a new traitSet with same traitDefs with
+   * current traitSet, but each trait is the default
+   * trait value.
+   */
+  public RelTraitSet getDefault() {
+    RelTrait[] newTraits = new RelTrait[traits.length];
+    for (int i = 0; i < traits.length; i++) {
+      newTraits[i] = traits[i].getTraitDef().getDefault();
+    }
+    return cache.getOrAdd(new RelTraitSet(cache, newTraits));
+  }
+
+  /**
+   * Returns a new traitSet with same traitDefs with
+   * current traitSet, but each trait except {@link Convention}
+   * is the default trait value. {@link Convention} trait
+   * remains the same with current traitSet.
+   */
+  public RelTraitSet getDefaultSansConvention() {
+    RelTrait[] newTraits = new RelTrait[traits.length];
+    for (int i = 0; i < traits.length; i++) {
+      if (traits[i].getTraitDef() == ConventionTraitDef.INSTANCE) {
+        newTraits[i] = traits[i];
+      } else {
+        newTraits[i] = traits[i].getTraitDef().getDefault();
+      }
+    }
+    return cache.getOrAdd(new RelTraitSet(cache, newTraits));
+  }
+
+  /**
+   * Returns {@link Convention} trait defined by
+   * {@link ConventionTraitDef#INSTANCE}, or null if the
+   * {@link ConventionTraitDef#INSTANCE} is not registered
+   * in this traitSet.
+   */
+  public Convention getConvention() {
+    return getTrait(ConventionTraitDef.INSTANCE);
+  }
+
+  /**
+   * Returns {@link RelDistribution} trait defined by
+   * {@link RelDistributionTraitDef#INSTANCE}, or null if the
+   * {@link RelDistributionTraitDef#INSTANCE} is not registered
+   * in this traitSet.
+   */
+  public <T extends RelDistribution> T getDistribution() {
+    //noinspection unchecked
+    return (T) getTrait(RelDistributionTraitDef.INSTANCE);
+  }
+
+  /**
+   * Returns {@link RelCollation} trait defined by
+   * {@link RelCollationTraitDef#INSTANCE}, or null if the
+   * {@link RelCollationTraitDef#INSTANCE} is not registered
+   * in this traitSet.
+   */
+  public <T extends RelCollation> T getCollation() {
+    //noinspection unchecked
+    return (T) getTrait(RelCollationTraitDef.INSTANCE);
   }
 
   /**
@@ -255,7 +393,7 @@ public final class RelTraitSet extends AbstractList<RelTrait> {
    *
    * @return the size of the RelTraitSet.
    */
-  public int size() {
+  @Override public int size() {
     return traits.length;
   }
 
@@ -289,13 +427,34 @@ public final class RelTraitSet extends AbstractList<RelTrait> {
    * @return true if traits are equal and in the same order, false otherwise
    */
   @Override public boolean equals(Object obj) {
-    return this == obj
-        || obj instanceof RelTraitSet
-        && Arrays.equals(traits, ((RelTraitSet) obj).traits);
+    if (this == obj) {
+      return true;
+    }
+    if (!(obj instanceof RelTraitSet)) {
+      return false;
+    }
+    RelTraitSet that = (RelTraitSet) obj;
+    if (this.hash != 0
+        && that.hash != 0
+        && this.hash != that.hash) {
+      return false;
+    }
+    if (traits.length != that.traits.length) {
+      return false;
+    }
+    for (int i = 0; i < traits.length; i++) {
+      if (traits[i] != that.traits[i]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @Override public int hashCode() {
-    return Arrays.hashCode(traits);
+    if (hash == 0) {
+      hash = Arrays.hashCode(traits);
+    }
+    return hash;
   }
 
   /**
@@ -320,8 +479,14 @@ public final class RelTraitSet extends AbstractList<RelTrait> {
    * @see org.apache.calcite.plan.RelTrait#satisfies(RelTrait)
    */
   public boolean satisfies(RelTraitSet that) {
-    for (Pair<RelTrait, RelTrait> pair : Pair.zip(traits, that.traits)) {
-      if (!pair.left.satisfies(pair.right)) {
+    final int n =
+        Math.min(
+            this.size(),
+            that.size());
+    for (int i = 0; i < n; i++) {
+      RelTrait thisTrait = this.traits[i];
+      RelTrait thatTrait = that.traits[i];
+      if (!thisTrait.satisfies(thatTrait)) {
         return false;
       }
     }
@@ -403,6 +568,9 @@ public final class RelTraitSet extends AbstractList<RelTrait> {
   }
 
   @Override public String toString() {
+    if (string == null) {
+      string = computeString();
+    }
     return string;
   }
 
@@ -410,7 +578,7 @@ public final class RelTraitSet extends AbstractList<RelTrait> {
    * Outputs the traits of this set as a String. Traits are output in order,
    * separated by periods.
    */
-  protected String computeString() {
+  String computeString() {
     StringBuilder s = new StringBuilder();
     for (int i = 0; i < traits.length; i++) {
       final RelTrait trait = traits[i];
@@ -462,29 +630,12 @@ public final class RelTraitSet extends AbstractList<RelTrait> {
     if (i >= 0) {
       return replace(i, trait);
     }
-    // Optimize time & space to represent a trait set key.
-    //
-    // Don't build a trait set until we're sure there isn't an equivalent one.
-    // Then we can justify the cost of computing RelTraitSet.string in the
-    // constructor.
     final RelTrait canonizedTrait = canonize(trait);
     assert canonizedTrait != null;
-    List<RelTrait> newTraits;
-    switch (traits.length) {
-    case 0:
-      newTraits = ImmutableList.of(canonizedTrait);
-      break;
-    case 1:
-      newTraits = FlatLists.of(traits[0], canonizedTrait);
-      break;
-    case 2:
-      newTraits = FlatLists.of(traits[0], traits[1], canonizedTrait);
-      break;
-    default:
-      newTraits = ImmutableList.<RelTrait>builder().add(traits)
-          .add(canonizedTrait).build();
-    }
-    return cache.getOrAdd(newTraits);
+    RelTrait[] newTraits = new RelTrait[traits.length + 1];
+    System.arraycopy(traits, 0, newTraits, 0, traits.length);
+    newTraits[traits.length] = canonizedTrait;
+    return cache.getOrAdd(new RelTraitSet(cache, newTraits));
   }
 
   public RelTraitSet plusAll(RelTrait[] traits) {
@@ -503,9 +654,16 @@ public final class RelTraitSet extends AbstractList<RelTrait> {
    * RelTraitSet. */
   public ImmutableList<RelTrait> difference(RelTraitSet traitSet) {
     final ImmutableList.Builder<RelTrait> builder = ImmutableList.builder();
-    for (Pair<RelTrait, RelTrait> pair : Pair.zip(traits, traitSet.traits)) {
-      if (pair.left != pair.right) {
-        builder.add(pair.right);
+    final int n =
+        Math.min(
+            this.size(),
+            traitSet.size());
+
+    for (int i = 0; i < n; i++) {
+      RelTrait thisTrait = this.traits[i];
+      RelTrait thatTrait = traitSet.traits[i];
+      if (thisTrait != thatTrait) {
+        builder.add(thatTrait);
       }
     }
     return builder.build();
@@ -539,22 +697,14 @@ public final class RelTraitSet extends AbstractList<RelTrait> {
 
   /** Cache of trait sets. */
   private static class Cache {
-    final Map<List<RelTrait>, RelTraitSet> map = new HashMap<>();
+    final Map<RelTraitSet, RelTraitSet> map = new HashMap<>();
 
     Cache() {
     }
 
-    RelTraitSet getOrAdd(List<RelTrait> traits) {
-      RelTraitSet traitSet1 = map.get(traits);
-      if (traitSet1 != null) {
-        return traitSet1;
-      }
-      final RelTraitSet traitSet =
-          new RelTraitSet(this, traits.toArray(new RelTrait[0]));
-      map.put(traits, traitSet);
-      return traitSet;
+    RelTraitSet getOrAdd(RelTraitSet t) {
+      RelTraitSet exist = map.putIfAbsent(t, t);
+      return exist == null ? t : exist;
     }
   }
 }
-
-// End RelTraitSet.java

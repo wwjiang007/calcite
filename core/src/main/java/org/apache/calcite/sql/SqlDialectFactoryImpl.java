@@ -22,6 +22,7 @@ import org.apache.calcite.sql.dialect.AccessSqlDialect;
 import org.apache.calcite.sql.dialect.AnsiSqlDialect;
 import org.apache.calcite.sql.dialect.BigQuerySqlDialect;
 import org.apache.calcite.sql.dialect.CalciteSqlDialect;
+import org.apache.calcite.sql.dialect.ClickHouseSqlDialect;
 import org.apache.calcite.sql.dialect.Db2SqlDialect;
 import org.apache.calcite.sql.dialect.DerbySqlDialect;
 import org.apache.calcite.sql.dialect.FirebirdSqlDialect;
@@ -42,15 +43,13 @@ import org.apache.calcite.sql.dialect.OracleSqlDialect;
 import org.apache.calcite.sql.dialect.ParaccelSqlDialect;
 import org.apache.calcite.sql.dialect.PhoenixSqlDialect;
 import org.apache.calcite.sql.dialect.PostgresqlSqlDialect;
+import org.apache.calcite.sql.dialect.PrestoSqlDialect;
 import org.apache.calcite.sql.dialect.RedshiftSqlDialect;
 import org.apache.calcite.sql.dialect.SnowflakeSqlDialect;
 import org.apache.calcite.sql.dialect.SparkSqlDialect;
 import org.apache.calcite.sql.dialect.SybaseSqlDialect;
 import org.apache.calcite.sql.dialect.TeradataSqlDialect;
 import org.apache.calcite.sql.dialect.VerticaSqlDialect;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
@@ -60,14 +59,12 @@ import java.util.Locale;
  * The default implementation of a <code>SqlDialectFactory</code>.
  */
 public class SqlDialectFactoryImpl implements SqlDialectFactory {
-  private static final Logger LOGGER = LoggerFactory.getLogger(SqlDialectFactoryImpl.class);
-
   public static final SqlDialectFactoryImpl INSTANCE = new SqlDialectFactoryImpl();
 
   private final JethroDataSqlDialect.JethroInfoCache jethroCache =
       JethroDataSqlDialect.createCache();
 
-  public SqlDialect create(DatabaseMetaData databaseMetaData) {
+  @Override public SqlDialect create(DatabaseMetaData databaseMetaData) {
     String databaseProductName;
     int databaseMajorVersion;
     int databaseMinorVersion;
@@ -102,6 +99,8 @@ public class SqlDialectFactoryImpl implements SqlDialectFactory {
       return new AccessSqlDialect(c);
     case "APACHE DERBY":
       return new DerbySqlDialect(c);
+    case "CLICKHOUSE":
+      return new ClickHouseSqlDialect(c);
     case "DBMS:CLOUDSCAPE":
       return new DerbySqlDialect(c);
     case "HIVE":
@@ -122,13 +121,16 @@ public class SqlDialectFactoryImpl implements SqlDialectFactory {
     case "MYSQL (INFOBRIGHT)":
       return new InfobrightSqlDialect(c);
     case "MYSQL":
-      return new MysqlSqlDialect(c);
+      return new MysqlSqlDialect(
+          c.withDataTypeSystem(MysqlSqlDialect.MYSQL_TYPE_SYSTEM));
     case "REDSHIFT":
       return new RedshiftSqlDialect(c);
     case "SNOWFLAKE":
       return new SnowflakeSqlDialect(c);
     case "SPARK":
       return new SparkSqlDialect(c);
+    default:
+      break;
     }
     // Now the fuzzy matches.
     if (databaseProductName.startsWith("DB2")) {
@@ -144,7 +146,8 @@ public class SqlDialectFactoryImpl implements SqlDialectFactory {
     } else if (databaseProductName.startsWith("HP Neoview")) {
       return new NeoviewSqlDialect(c);
     } else if (upperProductName.contains("POSTGRE")) {
-      return new PostgresqlSqlDialect(c);
+      return new PostgresqlSqlDialect(
+          c.withDataTypeSystem(PostgresqlSqlDialect.POSTGRESQL_TYPE_SYSTEM));
     } else if (upperProductName.contains("SQL SERVER")) {
       return new MssqlSqlDialect(c);
     } else if (upperProductName.contains("SYBASE")) {
@@ -209,12 +212,20 @@ public class SqlDialectFactoryImpl implements SqlDialectFactory {
         return NullCollation.LOW;
       } else if (databaseMetaData.nullsAreSortedHigh()) {
         return NullCollation.HIGH;
+      } else if (isBigQuery(databaseMetaData)) {
+        return NullCollation.LOW;
       } else {
         throw new IllegalArgumentException("cannot deduce null collation");
       }
     } catch (SQLException e) {
       throw new IllegalArgumentException("cannot deduce null collation", e);
     }
+  }
+
+  private static boolean isBigQuery(DatabaseMetaData databaseMetaData)
+      throws SQLException {
+    return databaseMetaData.getDatabaseProductName()
+        .equals("Google Big Query");
   }
 
   private String getIdentifierQuoteString(DatabaseMetaData databaseMetaData) {
@@ -234,6 +245,8 @@ public class SqlDialectFactoryImpl implements SqlDialectFactory {
       return BigQuerySqlDialect.DEFAULT;
     case CALCITE:
       return CalciteSqlDialect.DEFAULT;
+    case CLICKHOUSE:
+      return ClickHouseSqlDialect.DEFAULT;
     case DB2:
       return Db2SqlDialect.DEFAULT;
     case DERBY:
@@ -274,6 +287,8 @@ public class SqlDialectFactoryImpl implements SqlDialectFactory {
       return PhoenixSqlDialect.DEFAULT;
     case POSTGRESQL:
       return PostgresqlSqlDialect.DEFAULT;
+    case PRESTO:
+      return PrestoSqlDialect.DEFAULT;
     case REDSHIFT:
       return RedshiftSqlDialect.DEFAULT;
     case SYBASE:
@@ -292,5 +307,3 @@ public class SqlDialectFactoryImpl implements SqlDialectFactory {
   }
 
 }
-
-// End SqlDialectFactoryImpl.java

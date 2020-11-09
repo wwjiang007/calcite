@@ -42,9 +42,17 @@ import org.apache.calcite.sql.SqlUpdate;
 import org.apache.calcite.sql.SqlWindow;
 import org.apache.calcite.sql.SqlWith;
 import org.apache.calcite.sql.SqlWithItem;
+import org.apache.calcite.sql.type.SqlTypeCoercionRule;
+import org.apache.calcite.sql.validate.implicit.TypeCoercion;
+import org.apache.calcite.sql.validate.implicit.TypeCoercionFactory;
+import org.apache.calcite.sql.validate.implicit.TypeCoercions;
+import org.apache.calcite.util.ImmutableBeans;
+
+import org.apiguardian.api.API;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 import javax.annotation.Nullable;
 
 /**
@@ -104,14 +112,6 @@ import javax.annotation.Nullable;
  */
 public interface SqlValidator {
   //~ Methods ----------------------------------------------------------------
-
-  /**
-   * Returns the dialect of SQL (SQL:2003, etc.) this validator recognizes.
-   * Default is {@link SqlConformanceEnum#DEFAULT}.
-   *
-   * @return dialect of SQL this validator recognizes
-   */
-  SqlConformance getConformance();
 
   /**
    * Returns the catalog reader used by this validator.
@@ -206,7 +206,7 @@ public interface SqlValidator {
   void validateLiteral(SqlLiteral literal);
 
   /**
-   * Validates a {@link SqlIntervalQualifier}
+   * Validates a {@link SqlIntervalQualifier}.
    *
    * @param qualifier Interval qualifier
    */
@@ -301,7 +301,7 @@ public interface SqlValidator {
       SqlNodeList orderList, SqlValidatorScope scope);
 
   /**
-   * Validates a COLUMN_LIST parameter
+   * Validates a COLUMN_LIST parameter.
    *
    * @param function function containing COLUMN_LIST parameter
    * @param argTypes function arguments
@@ -377,17 +377,32 @@ public interface SqlValidator {
    * @param windowOrRef    Either the name of a window (a {@link SqlIdentifier})
    *                       or a window specification (a {@link SqlWindow}).
    * @param scope          Scope in which to resolve window names
-   * @param populateBounds Whether to populate bounds. Doing so may alter the
-   *                       definition of the window. It is recommended that
-   *                       populate bounds when translating to physical algebra,
-   *                       but not when validating.
    * @return A window
    * @throws RuntimeException Validation exception if window does not exist
    */
   SqlWindow resolveWindow(
       SqlNode windowOrRef,
+      SqlValidatorScope scope);
+
+  /**
+   * Converts a window specification or window name into a fully-resolved
+   * window specification.
+   *
+   * @deprecated Use {@link #resolveWindow(SqlNode, SqlValidatorScope)}, which
+   * does not have the deprecated {@code populateBounds} parameter.
+   *
+   * @param populateBounds Whether to populate bounds. Doing so may alter the
+   *                       definition of the window. It is recommended that
+   *                       populate bounds when translating to physical algebra,
+   *                       but not when validating.
+   */
+  @Deprecated // to be removed before 2.0
+  default SqlWindow resolveWindow(
+      SqlNode windowOrRef,
       SqlValidatorScope scope,
-      boolean populateBounds);
+      boolean populateBounds) {
+    return resolveWindow(windowOrRef, scope);
+  };
 
   /**
    * Finds the namespace corresponding to a given node.
@@ -449,18 +464,19 @@ public interface SqlValidator {
   /**
    * Saves the type of a {@link SqlNode}, now that it has been validated.
    *
+   * <p>This method is only for internal use. The validator should drive the
+   * type-derivation process, and store nodes' types when they have been derived.
+   *
    * @param node A SQL parse tree node, never null
    * @param type Its type; must not be null
-   * @deprecated This method should not be in the {@link SqlValidator}
-   * interface. The validator should drive the type-derivation process, and
-   * store nodes' types when they have been derived.
    */
+  @API(status = API.Status.INTERNAL, since = "1.24")
   void setValidatedNodeType(
       SqlNode node,
       RelDataType type);
 
   /**
-   * Removes a node from the set of validated nodes
+   * Removes a node from the set of validated nodes.
    *
    * @param node node to be removed
    */
@@ -603,49 +619,6 @@ public interface SqlValidator {
   String getParentCursor(String columnListParamName);
 
   /**
-   * Enables or disables expansion of identifiers other than column
-   * references.
-   *
-   * @param expandIdentifiers new setting
-   */
-  void setIdentifierExpansion(boolean expandIdentifiers);
-
-  /**
-   * Enables or disables expansion of column references. (Currently this does
-   * not apply to the ORDER BY clause; may be fixed in the future.)
-   *
-   * @param expandColumnReferences new setting
-   */
-  void setColumnReferenceExpansion(boolean expandColumnReferences);
-
-  /**
-   * @return whether column reference expansion is enabled
-   */
-  boolean getColumnReferenceExpansion();
-
-  /** Sets how NULL values should be collated if an ORDER BY item does not
-   * contain NULLS FIRST or NULLS LAST. */
-  void setDefaultNullCollation(NullCollation nullCollation);
-
-  /** Returns how NULL values should be collated if an ORDER BY item does not
-   * contain NULLS FIRST or NULLS LAST. */
-  NullCollation getDefaultNullCollation();
-
-  /**
-   * Returns expansion of identifiers.
-   *
-   * @return whether this validator should expand identifiers
-   */
-  boolean shouldExpandIdentifiers();
-
-  /**
-   * Enables or disables rewrite of "macro-like" calls such as COALESCE.
-   *
-   * @param rewriteCalls new setting
-   */
-  void setCallRewrite(boolean rewriteCalls);
-
-  /**
    * Derives the type of a constructor.
    *
    * @param scope                 Scope
@@ -768,6 +741,159 @@ public interface SqlValidator {
   void validateSequenceValue(SqlValidatorScope scope, SqlIdentifier id);
 
   SqlValidatorScope getWithScope(SqlNode withItem);
-}
 
-// End SqlValidator.java
+  /** Get the type coercion instance. */
+  TypeCoercion getTypeCoercion();
+
+  /** Returns the config of the validator. */
+  Config config();
+
+  /**
+   * Returns this SqlValidator, with the same state, applying
+   * a transform to the config.
+   *
+   * <p>This is mainly used for tests, otherwise constructs a {@link Config} directly
+   * through the constructor.
+   */
+  @API(status = API.Status.INTERNAL, since = "1.23")
+  SqlValidator transform(UnaryOperator<SqlValidator.Config> transform);
+
+  //~ Inner Class ------------------------------------------------------------
+
+  /**
+   * Interface to define the configuration for a SqlValidator.
+   * Provides methods to set each configuration option.
+   */
+  public interface Config {
+    /** Default configuration. */
+    SqlValidator.Config DEFAULT = ImmutableBeans.create(Config.class)
+        .withTypeCoercionFactory(TypeCoercions::createTypeCoercion);
+
+    /**
+     * Returns whether to enable rewrite of "macro-like" calls such as COALESCE.
+     */
+    @ImmutableBeans.Property
+    @ImmutableBeans.BooleanDefault(true)
+    boolean callRewrite();
+
+    /**
+     * Sets whether to enable rewrite of "macro-like" calls such as COALESCE.
+     */
+    Config withCallRewrite(boolean rewrite);
+
+    /** Returns how NULL values should be collated if an ORDER BY item does not
+     * contain NULLS FIRST or NULLS LAST. */
+    @ImmutableBeans.Property
+    @ImmutableBeans.EnumDefault("HIGH")
+    NullCollation defaultNullCollation();
+
+    /** Sets how NULL values should be collated if an ORDER BY item does not
+     * contain NULLS FIRST or NULLS LAST. */
+    Config withDefaultNullCollation(NullCollation nullCollation);
+
+    /** Returns whether column reference expansion is enabled. */
+    @ImmutableBeans.Property
+    @ImmutableBeans.BooleanDefault(true)
+    boolean columnReferenceExpansion();
+
+    /**
+     * Sets whether to enable expansion of column references. (Currently this does
+     * not apply to the ORDER BY clause; may be fixed in the future.)
+     */
+    Config withColumnReferenceExpansion(boolean expand);
+
+    /**
+     * Returns whether to expand identifiers other than column
+     * references.
+     *
+     * <p>REVIEW jvs 30-June-2006: subclasses may override shouldExpandIdentifiers
+     * in a way that ignores this; we should probably get rid of the protected
+     * method and always use this variable (or better, move preferences like
+     * this to a separate "parameter" class).
+     */
+    @ImmutableBeans.Property
+    @ImmutableBeans.BooleanDefault(false)
+    boolean identifierExpansion();
+
+    /**
+     * Sets whether to enable expansion of identifiers other than column
+     * references.
+     */
+    Config withIdentifierExpansion(boolean expand);
+
+    /**
+     * Returns whether this validator should be lenient upon encountering an
+     * unknown function, default false.
+     *
+     * <p>If true, if a statement contains a call to a function that is not
+     * present in the operator table, or if the call does not have the required
+     * number or types of operands, the validator nevertheless regards the
+     * statement as valid. The type of the function call will be
+     * {@link #getUnknownType() UNKNOWN}.
+     *
+     * <p>If false (the default behavior), an unknown function call causes a
+     * validation error to be thrown.
+     */
+    @ImmutableBeans.Property
+    @ImmutableBeans.BooleanDefault(false)
+    boolean lenientOperatorLookup();
+
+    /**
+     * Sets whether this validator should be lenient upon encountering an unknown
+     * function.
+     *
+     * @param lenient Whether to be lenient when encountering an unknown function
+     */
+    Config withLenientOperatorLookup(boolean lenient);
+
+    /** Returns whether the validator supports implicit type coercion. */
+    @ImmutableBeans.Property
+    @ImmutableBeans.BooleanDefault(true)
+    boolean typeCoercionEnabled();
+
+    /**
+     * Sets whether to enable implicit type coercion for validation, default true.
+     *
+     * @see org.apache.calcite.sql.validate.implicit.TypeCoercionImpl TypeCoercionImpl
+     */
+    Config withTypeCoercionEnabled(boolean enabled);
+
+    /** Returns the type coercion factory. */
+    @ImmutableBeans.Property
+    TypeCoercionFactory typeCoercionFactory();
+
+    /**
+     * Sets a factory to create type coercion instance that overrides the
+     * default coercion rules defined in
+     * {@link org.apache.calcite.sql.validate.implicit.TypeCoercionImpl}.
+     *
+     * @param factory Factory to create {@link TypeCoercion} instance
+     */
+    Config withTypeCoercionFactory(TypeCoercionFactory factory);
+
+    /** Returns the type coercion rules for explicit type coercion. */
+    @ImmutableBeans.Property
+    SqlTypeCoercionRule typeCoercionRules();
+
+    /**
+     * Sets the {@link SqlTypeCoercionRule} instance which defines the type conversion matrix
+     * for the explicit type coercion.
+     *
+     * <p>The {@code rules} setting should be thread safe. In the default implementation,
+     * it is set to a ThreadLocal variable.
+     *
+     * @param rules The {@link SqlTypeCoercionRule} instance,
+     *              see its documentation for how to customize the rules
+     */
+    Config withTypeCoercionRules(SqlTypeCoercionRule rules);
+
+    /** Returns the dialect of SQL (SQL:2003, etc.) this validator recognizes.
+     * Default is {@link SqlConformanceEnum#DEFAULT}. */
+    @ImmutableBeans.Property
+    @ImmutableBeans.EnumDefault("DEFAULT")
+    SqlConformance sqlConformance();
+
+    /** Sets up the sql conformance of the validator. */
+    Config withSqlConformance(SqlConformance conformance);
+  }
+}

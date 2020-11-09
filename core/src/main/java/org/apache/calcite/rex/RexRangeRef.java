@@ -61,7 +61,7 @@ public class RexRangeRef extends RexNode {
 
   //~ Methods ----------------------------------------------------------------
 
-  public RelDataType getType() {
+  @Override public RelDataType getType() {
     return type;
   }
 
@@ -69,11 +69,11 @@ public class RexRangeRef extends RexNode {
     return offset;
   }
 
-  public <R> R accept(RexVisitor<R> visitor) {
+  @Override public <R> R accept(RexVisitor<R> visitor) {
     return visitor.visitRangeRef(this);
   }
 
-  public <R, P> R accept(RexBiVisitor<R, P> visitor, P arg) {
+  @Override public <R, P> R accept(RexBiVisitor<R, P> visitor, P arg) {
     return visitor.visitRangeRef(this, arg);
   }
 
@@ -87,6 +87,8 @@ public class RexRangeRef extends RexNode {
   @Override public int hashCode() {
     return Objects.hash(type, offset);
   }
-}
 
-// End RexRangeRef.java
+  @Override public String toString() {
+    return "offset(" + offset + ")";
+  }
+}

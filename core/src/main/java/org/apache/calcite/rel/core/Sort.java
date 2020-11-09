@@ -33,10 +33,8 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.util.Util;
 
-import com.google.common.collect.ImmutableList;
-
-import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Relational expression that imposes a particular sort order on its input
@@ -46,7 +44,6 @@ public abstract class Sort extends SingleRel {
   //~ Instance fields --------------------------------------------------------
 
   public final RelCollation collation;
-  protected final ImmutableList<RexNode> fieldExps;
   public final RexNode offset;
   public final RexNode fetch;
 
@@ -60,7 +57,7 @@ public abstract class Sort extends SingleRel {
    * @param child     input relational expression
    * @param collation array of sort specifications
    */
-  public Sort(
+  protected Sort(
       RelOptCluster cluster,
       RelTraitSet traits,
       RelNode child,
@@ -79,7 +76,7 @@ public abstract class Sort extends SingleRel {
    *                  first row
    * @param fetch     Expression for number of rows to fetch
    */
-  public Sort(
+  protected Sort(
       RelOptCluster cluster,
       RelTraitSet traits,
       RelNode child,
@@ -97,18 +94,12 @@ public abstract class Sort extends SingleRel {
         && offset == null
         && collation.getFieldCollations().isEmpty())
         : "trivial sort";
-    ImmutableList.Builder<RexNode> builder = ImmutableList.builder();
-    for (RelFieldCollation field : collation.getFieldCollations()) {
-      int index = field.getFieldIndex();
-      builder.add(cluster.getRexBuilder().makeInputRef(child, index));
-    }
-    fieldExps = builder.build();
   }
 
   /**
    * Creates a Sort by parsing serialized output.
    */
-  public Sort(RelInput input) {
+  protected Sort(RelInput input) {
     this(input.getCluster(), input.getTraitSet().plus(input.getCollation()),
         input.getInput(),
         RelCollationTraitDef.INSTANCE.canonize(input.getCollation()),
@@ -139,22 +130,24 @@ public abstract class Sort extends SingleRel {
     return planner.getCostFactory().makeCost(rowCount, cpu, 0);
   }
 
-  @Override public List<RexNode> getChildExps() {
-    return fieldExps;
-  }
-
-  public RelNode accept(RexShuttle shuttle) {
+  @Override public RelNode accept(RexShuttle shuttle) {
     RexNode offset = shuttle.apply(this.offset);
     RexNode fetch = shuttle.apply(this.fetch);
-    List<RexNode> fieldExps = shuttle.apply(this.fieldExps);
-    assert fieldExps == this.fieldExps
+    List<RexNode> originalSortExps = getSortExps();
+    List<RexNode> sortExps = shuttle.apply(originalSortExps);
+    assert sortExps == originalSortExps
         : "Sort node does not support modification of input field expressions."
-          + " Old expressions: " + this.fieldExps + ", new ones: " + fieldExps;
+          + " Old expressions: " + originalSortExps + ", new ones: " + sortExps;
     if (offset == this.offset
         && fetch == this.fetch) {
       return this;
     }
     return copy(traitSet, getInput(), collation, offset, fetch);
+  }
+
+  @Override public boolean isEnforcer() {
+    return offset == null && fetch == null
+        && collation.getFieldCollations().size() > 0;
   }
 
   /**
@@ -173,18 +166,20 @@ public abstract class Sort extends SingleRel {
     return collation;
   }
 
-  @SuppressWarnings("deprecation")
-  @Override public List<RelCollation> getCollationList() {
-    return Collections.singletonList(getCollation());
+  /** Returns the sort expressions. */
+  public List<RexNode> getSortExps() {
+    //noinspection StaticPseudoFunctionalStyleMethod
+    return Util.transform(collation.getFieldCollations(), field ->
+        getCluster().getRexBuilder().makeInputRef(input,
+            Objects.requireNonNull(field).getFieldIndex()));
   }
 
-  public RelWriter explainTerms(RelWriter pw) {
+  @Override public RelWriter explainTerms(RelWriter pw) {
     super.explainTerms(pw);
-    assert fieldExps.size() == collation.getFieldCollations().size();
     if (pw.nest()) {
       pw.item("collation", collation);
     } else {
-      for (Ord<RexNode> ord : Ord.zip(fieldExps)) {
+      for (Ord<RexNode> ord : Ord.zip(getSortExps())) {
         pw.item("sort" + ord.i, ord.e);
       }
       for (Ord<RelFieldCollation> ord
@@ -197,5 +192,3 @@ public abstract class Sort extends SingleRel {
     return pw;
   }
 }
-
-// End Sort.java

@@ -30,7 +30,8 @@ import java.util.TimeZone;
 import javax.annotation.Nullable;
 
 /**
- * DruidSqlOperatorConverter implementation that handles Ceil operations conversions
+ * DruidSqlOperatorConverter implementation that handles Ceil operations
+ * conversions.
  */
 public class CeilOperatorConversion implements DruidSqlOperatorConverter {
   @Override public SqlOperator calciteOperator() {
@@ -77,5 +78,3 @@ public class CeilOperatorConversion implements DruidSqlOperatorConverter {
     }
   }
 }
-
-// End CeilOperatorConversion.java

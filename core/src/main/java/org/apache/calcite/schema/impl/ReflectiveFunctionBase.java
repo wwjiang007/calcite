@@ -42,10 +42,11 @@ public abstract class ReflectiveFunctionBase implements Function {
   public final List<FunctionParameter> parameters;
 
   /**
-   * {@code ReflectiveFunctionBase} constructor
-   * @param method method that is used to get type information from
+   * Creates a ReflectiveFunctionBase.
+   *
+   * @param method Method that is used to get type information from
    */
-  public ReflectiveFunctionBase(Method method) {
+  protected ReflectiveFunctionBase(Method method) {
     this.method = method;
     this.parameters = builder().addMethodParameters(method).build();
   }
@@ -55,7 +56,7 @@ public abstract class ReflectiveFunctionBase implements Function {
    *
    * @return Parameters; never null
    */
-  public List<FunctionParameter> getParameters() {
+  @Override public List<FunctionParameter> getParameters() {
     return parameters;
   }
 
@@ -112,19 +113,24 @@ public abstract class ReflectiveFunctionBase implements Function {
       final int ordinal = builder.size();
       builder.add(
           new FunctionParameter() {
-            public int getOrdinal() {
+            @Override public String toString() {
+              return ordinal + ": " + name + " " + type.getSimpleName()
+                  + (optional ? "?" : "");
+            }
+
+            @Override public int getOrdinal() {
               return ordinal;
             }
 
-            public String getName() {
+            @Override public String getName() {
               return name;
             }
 
-            public RelDataType getType(RelDataTypeFactory typeFactory) {
+            @Override public RelDataType getType(RelDataTypeFactory typeFactory) {
               return typeFactory.createJavaType(type);
             }
 
-            public boolean isOptional() {
+            @Override public boolean isOptional() {
               return optional;
             }
           });
@@ -141,5 +147,3 @@ public abstract class ReflectiveFunctionBase implements Function {
     }
   }
 }
-
-// End ReflectiveFunctionBase.java

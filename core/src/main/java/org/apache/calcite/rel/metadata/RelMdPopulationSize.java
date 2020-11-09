@@ -22,8 +22,8 @@ import org.apache.calcite.rel.core.Exchange;
 import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.Project;
-import org.apache.calcite.rel.core.SemiJoin;
 import org.apache.calcite.rel.core.Sort;
+import org.apache.calcite.rel.core.TableModify;
 import org.apache.calcite.rel.core.Union;
 import org.apache.calcite.rel.core.Values;
 import org.apache.calcite.rex.RexNode;
@@ -48,7 +48,7 @@ public class RelMdPopulationSize
 
   //~ Methods ----------------------------------------------------------------
 
-  public MetadataDef<BuiltInMetadata.PopulationSize> getDef() {
+  @Override public MetadataDef<BuiltInMetadata.PopulationSize> getDef() {
     return BuiltInMetadata.PopulationSize.DEF;
   }
 
@@ -63,6 +63,11 @@ public class RelMdPopulationSize
   }
 
   public Double getPopulationSize(Exchange rel, RelMetadataQuery mq,
+      ImmutableBitSet groupKey) {
+    return mq.getPopulationSize(rel.getInput(), groupKey);
+  }
+
+  public Double getPopulationSize(TableModify rel, RelMetadataQuery mq,
       ImmutableBitSet groupKey) {
     return mq.getPopulationSize(rel.getInput(), groupKey);
   }
@@ -83,11 +88,6 @@ public class RelMdPopulationSize
   public Double getPopulationSize(Join rel, RelMetadataQuery mq,
       ImmutableBitSet groupKey) {
     return RelMdUtil.getJoinPopulationSize(mq, rel, groupKey);
-  }
-
-  public Double getPopulationSize(SemiJoin rel, RelMetadataQuery mq,
-      ImmutableBitSet groupKey) {
-    return mq.getPopulationSize(rel.getLeft(), groupKey);
   }
 
   public Double getPopulationSize(Aggregate rel, RelMetadataQuery mq,
@@ -159,5 +159,3 @@ public class RelMdPopulationSize
     return null;
   }
 }
-
-// End RelMdPopulationSize.java

@@ -38,8 +38,7 @@ import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.util.BuiltInMethod;
 import org.apache.calcite.util.Pair;
-
-import com.google.common.collect.Lists;
+import org.apache.calcite.util.Util;
 
 import java.lang.reflect.Method;
 import java.util.AbstractList;
@@ -99,11 +98,11 @@ public class GeodeToEnumerableConverter extends ConverterImpl implements Enumera
         pref.prefer(JavaRowFormat.ARRAY));
 
     final List<Class> physFieldClasses = new AbstractList<Class>() {
-      public Class get(int index) {
+      @Override public Class get(int index) {
         return physType.fieldClass(index);
       }
 
-      public int size() {
+      @Override public int size() {
         return rowType.getFieldCount();
       }
     };
@@ -152,8 +151,6 @@ public class GeodeToEnumerableConverter extends ConverterImpl implements Enumera
    * {@code {ConstantExpression("x"), ConstantExpression("y")}}.
    */
   private static <T> List<Expression> constantList(List<T> values) {
-    return Lists.transform(values, Expressions::constant);
+    return Util.transform(values, Expressions::constant);
   }
 }
-
-// End GeodeToEnumerableConverter.java

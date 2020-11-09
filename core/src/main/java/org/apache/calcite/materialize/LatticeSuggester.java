@@ -28,9 +28,11 @@ import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.Project;
+import org.apache.calcite.rel.core.SetOp;
 import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.core.TableScan;
-import org.apache.calcite.rel.rules.FilterJoinRule;
+import org.apache.calcite.rel.rules.CoreRules;
+import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlAggFunction;
@@ -49,7 +51,6 @@ import org.apache.calcite.util.mapping.IntPair;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.LinkedListMultimap;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
 
 import java.util.ArrayList;
@@ -63,6 +64,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
@@ -74,8 +76,8 @@ public class LatticeSuggester {
 
   private static final HepProgram PROGRAM =
       new HepProgramBuilder()
-          .addRuleInstance(FilterJoinRule.FILTER_ON_JOIN)
-          .addRuleInstance(FilterJoinRule.JOIN)
+          .addRuleInstance(CoreRules.FILTER_INTO_JOIN)
+          .addRuleInstance(CoreRules.JOIN_CONDITION_PUSH)
           .build();
 
   /** Lattices, indexed by digest. Uses LinkedHashMap for determinacy. */
@@ -102,6 +104,17 @@ public class LatticeSuggester {
     return ImmutableSet.copyOf(set);
   }
 
+  /** Converts a column reference to an expression. */
+  public RexNode toRex(LatticeTable table, int column) {
+    final List<RelDataTypeField> fieldList =
+        table.t.getRowType().getFieldList();
+    if (column < fieldList.size()) {
+      return new RexInputRef(column, fieldList.get(column).getType());
+    } else {
+      return space.tableExpressions.get(table).get(column - fieldList.size());
+    }
+  }
+
   /** Adds a query.
    *
    * <p>It may fit within an existing lattice (or lattices). Or it may need a
@@ -120,10 +133,14 @@ public class LatticeSuggester {
     final RelNode r2 = planner.findBestExp();
 
     final Query q = new Query(space);
-    final Frame frame = frame(q, r2);
-    if (frame == null) {
-      return ImmutableList.of();
-    }
+    final List<Frame> frameList = new ArrayList<>();
+    frames(frameList, q, r2);
+    final List<Lattice> lattices = new ArrayList<>();
+    frameList.forEach(frame -> addFrame(q, frame, lattices));
+    return ImmutableList.copyOf(lattices);
+  }
+
+  private void addFrame(Query q, Frame frame, List<Lattice> lattices) {
     final AttributedDirectedGraph<TableRef, StepRef> g =
         AttributedDirectedGraph.create(new StepRef.Factory());
     final Multimap<Pair<TableRef, TableRef>, IntPair> map =
@@ -132,8 +149,8 @@ public class LatticeSuggester {
       g.addVertex(tableRef);
     }
     for (Hop hop : frame.hops) {
-      map.put(Pair.of(hop.source.t, hop.target.t),
-          IntPair.of(hop.source.c, hop.target.c));
+      map.put(Pair.of(hop.source.tableRef(), hop.target.tableRef()),
+          IntPair.of(hop.source.col(space), hop.target.col(space)));
     }
     for (Map.Entry<Pair<TableRef, TableRef>, Collection<IntPair>> e
         : map.asMap().entrySet()) {
@@ -150,7 +167,7 @@ public class LatticeSuggester {
     // If the join graph is cyclic, we can't use it.
     final Set<TableRef> cycles = new CycleDetector<>(g).findCycles();
     if (!cycles.isEmpty()) {
-      return ImmutableList.of();
+      return;
     }
 
     // Translate the query graph to mutable nodes
@@ -192,7 +209,6 @@ public class LatticeSuggester {
     }
 
     // Transcribe the hierarchy of mutable nodes to immutable nodes
-    final List<Lattice> lattices = new ArrayList<>();
     for (MutableNode rootNode : rootNodes) {
       if (rootNode.isCyclic()) {
         continue;
@@ -208,27 +224,30 @@ public class LatticeSuggester {
         for (ColRef arg : measure.arguments) {
           if (arg == null) {
             // Cannot handle expressions, e.g. "sum(x + 1)" yet
-            return ImmutableList.of();
+            return;
           }
         }
         latticeBuilder.addMeasure(
             new Lattice.Measure(measure.aggregate, measure.distinct,
                 measure.name,
-                Lists.transform(measure.arguments, colRef -> {
+                Util.transform(measure.arguments, colRef -> {
+                  final Lattice.Column column;
                   if (colRef instanceof BaseColRef) {
                     final BaseColRef baseColRef = (BaseColRef) colRef;
                     final MutableNode node = nodes.get(baseColRef.t);
                     final int table = flatNodes.indexOf(node);
-                    return latticeBuilder.column(table, baseColRef.c);
+                    column = latticeBuilder.column(table, baseColRef.c);
                   } else if (colRef instanceof DerivedColRef) {
                     final DerivedColRef derivedColRef =
                         (DerivedColRef) colRef;
                     final String alias = deriveAlias(measure, derivedColRef);
-                    return latticeBuilder.expression(derivedColRef.e, alias,
+                    column = latticeBuilder.expression(derivedColRef.e, alias,
                         derivedColRef.tableAliases());
                   } else {
                     throw new AssertionError("expression in measure");
                   }
+                  latticeBuilder.use(column, true);
+                  return column;
                 })));
       }
 
@@ -239,6 +258,7 @@ public class LatticeSuggester {
           final Lattice.Column expression =
               latticeBuilder.expression(derivedColRef.e,
                   derivedColRef.alias, derivedColRef.tableAliases());
+          latticeBuilder.use(expression, false);
         }
       }
 
@@ -246,7 +266,6 @@ public class LatticeSuggester {
       final Lattice lattice1 = findMatch(lattice0, rootNode);
       lattices.add(lattice1);
     }
-    return ImmutableList.copyOf(lattices);
   }
 
   /** Derives the alias of an expression that is the argument to a measure.
@@ -323,12 +342,8 @@ public class LatticeSuggester {
         final CalciteSchema rootSchema = CalciteSchema.createRootSchema(false);
         final Lattice.Builder builder =
             new Lattice.Builder(space, rootSchema, mutableNode);
-        for (Lattice.Measure measure : bestMatch.defaultMeasures) {
-          builder.addMeasure(measure.copy(mapper(bestMatch, builder)));
-        }
-        for (Lattice.Measure measure : lattice.defaultMeasures) {
-          builder.addMeasure(measure.copy(mapper(lattice, builder)));
-        }
+        copyMeasures(builder, bestMatch);
+        copyMeasures(builder, lattice);
         final Lattice lattice2 = builder.build();
         latticeMap.remove(bestMatch.toString());
         obsoleteLatticeMap.put(bestMatch, lattice2);
@@ -342,19 +357,29 @@ public class LatticeSuggester {
     return lattice;
   }
 
-  private java.util.function.Function<Lattice.Column, Lattice.Column> mapper(
-      final Lattice lattice, final Lattice.Builder builder) {
-    return (Lattice.Column c) -> {
-      if (c instanceof Lattice.BaseColumn) {
-        Lattice.BaseColumn baseColumn = (Lattice.BaseColumn) c;
-        Pair<Path, Integer> p = lattice.columnToPathOffset(baseColumn);
-        return builder.pathOffsetToColumn(p.left, p.right);
-      } else {
-        final Lattice.DerivedColumn derivedColumn = (Lattice.DerivedColumn) c;
-        return builder.expression(derivedColumn.e, derivedColumn.alias,
-            derivedColumn.tables);
-      }
-    };
+  /** Copies measures and column usages from an existing lattice into a builder,
+   * using a mapper to translate old-to-new columns, so that the new lattice can
+   * inherit from the old. */
+  private void copyMeasures(Lattice.Builder builder, Lattice lattice) {
+    final Function<Lattice.Column, Lattice.Column> mapper =
+        (Lattice.Column c) -> {
+          if (c instanceof Lattice.BaseColumn) {
+            Lattice.BaseColumn baseColumn = (Lattice.BaseColumn) c;
+            Pair<Path, Integer> p = lattice.columnToPathOffset(baseColumn);
+            return builder.pathOffsetToColumn(p.left, p.right);
+          } else {
+            final Lattice.DerivedColumn derivedColumn = (Lattice.DerivedColumn) c;
+            return builder.expression(derivedColumn.e, derivedColumn.alias,
+                derivedColumn.tables);
+          }
+        };
+    for (Lattice.Measure measure : lattice.defaultMeasures) {
+      builder.addMeasure(measure.copy(mapper));
+    }
+    for (Map.Entry<Integer, Boolean> entry : lattice.columnUses.entries()) {
+      final Lattice.Column column = lattice.columns.get(entry.getKey());
+      builder.use(mapper.apply(column), entry.getValue());
+    }
   }
 
   private int matchQuality(Lattice lattice, Lattice target) {
@@ -374,6 +399,17 @@ public class LatticeSuggester {
     final LinkedHashSet<E> c3 = new LinkedHashSet<>(c);
     c3.removeAll(c2);
     return c3;
+  }
+
+  private void frames(List<Frame> frames, final Query q, RelNode r) {
+    if (r instanceof SetOp) {
+      r.getInputs().forEach(input -> frames(frames, q, input));
+    } else {
+      final Frame frame = frame(q, r);
+      if (frame != null) {
+        frames.add(frame);
+      }
+    }
   }
 
   private Frame frame(final Query q, RelNode r) {
@@ -397,7 +433,7 @@ public class LatticeSuggester {
       }
       final int fieldCount = r.getRowType().getFieldCount();
       return new Frame(fieldCount, h.hops, measures, ImmutableList.of(h)) {
-        ColRef column(int offset) {
+        @Override ColRef column(int offset) {
           if (offset < aggregate.getGroupSet().cardinality()) {
             return h.column(aggregate.getGroupSet().nth(offset));
           }
@@ -423,7 +459,7 @@ public class LatticeSuggester {
           columns = columnBuilder.build();
         }
 
-        ColRef column(int offset) {
+        @Override ColRef column(int offset) {
           return columns.get(offset);
         }
 
@@ -446,7 +482,13 @@ public class LatticeSuggester {
               tableRefs.add(tableRef);
             }
           }
-          return new DerivedColRef(tableRefs.build(), e, alias);
+          final List<TableRef> tableRefList = tableRefs.build();
+          switch (tableRefList.size()) {
+          case 1:
+            return new SingleTableDerivedColRef(tableRefList.get(0), e, alias);
+          default:
+            return new DerivedColRef(tableRefList, e, alias);
+          }
         }
       };
     } else if (r instanceof Join) {
@@ -462,16 +504,18 @@ public class LatticeSuggester {
       for (IntPair p : join.analyzeCondition().pairs()) {
         final ColRef source = left.column(p.source);
         final ColRef target = right.column(p.target);
-        assert source instanceof BaseColRef;
-        assert target instanceof BaseColRef;
-        builder.add(new Hop((BaseColRef) source, (BaseColRef) target));
+        assert source instanceof SingleTableColRef;
+        assert target instanceof SingleTableColRef;
+        builder.add(
+            new Hop((SingleTableColRef) source,
+                (SingleTableColRef) target));
       }
       builder.addAll(right.hops);
       final int fieldCount = r.getRowType().getFieldCount();
       return new Frame(fieldCount, builder.build(),
           CompositeList.of(left.measures, right.measures),
           ImmutableList.of(left, right)) {
-        ColRef column(int offset) {
+        @Override ColRef column(int offset) {
           if (offset < leftCount) {
             return left.column(offset);
           } else {
@@ -485,7 +529,7 @@ public class LatticeSuggester {
       final int fieldCount = r.getRowType().getFieldCount();
       return new Frame(fieldCount, ImmutableList.of(),
           ImmutableList.of(), ImmutableSet.of(tableRef)) {
-        ColRef column(int offset) {
+        @Override ColRef column(int offset) {
           if (offset >= scan.getTable().getRowType().getFieldCount()) {
             throw new IndexOutOfBoundsException("field " + offset
                 + " out of range in " + scan.getTable().getRowType());
@@ -522,7 +566,7 @@ public class LatticeSuggester {
 
     StepRef stepRef(TableRef source, TableRef target, List<IntPair> keys) {
       keys = LatticeSpace.sortUnique(keys);
-      final Step h = new Step(source.table, target.table, keys);
+      final Step h = Step.create(source.table, target.table, keys, space);
       if (h.isBackwards(space.statisticProvider)) {
         final List<IntPair> keys1 = LatticeSpace.swap(h.keys);
         final Step h2 = space.addEdge(h.target(), h.source(), keys1);
@@ -563,8 +607,8 @@ public class LatticeSuggester {
     static Set<TableRef> collectTableRefs(List<Frame> inputs, List<Hop> hops) {
       final LinkedHashSet<TableRef> set = new LinkedHashSet<>();
       for (Hop hop : hops) {
-        set.add(hop.source.t);
-        set.add(hop.target.t);
+        set.add(hop.source.tableRef());
+        set.add(hop.target.tableRef());
       }
       for (Frame frame : inputs) {
         set.addAll(frame.tableRefs);
@@ -583,17 +627,17 @@ public class LatticeSuggester {
       this.ordinalInQuery = ordinalInQuery;
     }
 
-    public int hashCode() {
+    @Override public int hashCode() {
       return ordinalInQuery;
     }
 
-    public boolean equals(Object obj) {
+    @Override public boolean equals(Object obj) {
       return this == obj
           || obj instanceof TableRef
           && ordinalInQuery == ((TableRef) obj).ordinalInQuery;
     }
 
-    public String toString() {
+    @Override public String toString() {
       return table + ":" + ordinalInQuery;
     }
   }
@@ -620,21 +664,8 @@ public class LatticeSuggester {
     }
 
     @Override public String toString() {
-      final StringBuilder b = new StringBuilder()
-          .append("StepRef(")
-          .append(source)
-          .append(", ")
-          .append(target)
-          .append(",");
-      for (IntPair key : step.keys) {
-        b.append(' ')
-            .append(step.source().field(key.source).getName())
-            .append(':')
-            .append(step.target().field(key.target).getName());
-      }
-      return b.append("):")
-          .append(ordinalInQuery)
-          .toString();
+      return "StepRef(" + source + ", " + target + "," + step.keyString + "):"
+          + ordinalInQuery;
     }
 
     TableRef source() {
@@ -649,11 +680,11 @@ public class LatticeSuggester {
     private static class Factory
         implements AttributedDirectedGraph.AttributedEdgeFactory<
             TableRef, StepRef> {
-      public StepRef createEdge(TableRef source, TableRef target) {
+      @Override public StepRef createEdge(TableRef source, TableRef target) {
         throw new UnsupportedOperationException();
       }
 
-      public StepRef createEdge(TableRef source, TableRef target,
+      @Override public StepRef createEdge(TableRef source, TableRef target,
             Object... attributes) {
         final Step step = (Step) attributes[0];
         final Integer ordinalInQuery = (Integer) attributes[1];
@@ -692,10 +723,10 @@ public class LatticeSuggester {
    * </ul>
    */
   private static class Hop {
-    final BaseColRef source;
-    final BaseColRef target;
+    final SingleTableColRef source;
+    final SingleTableColRef target;
 
-    private Hop(BaseColRef source, BaseColRef target) {
+    private Hop(SingleTableColRef source, SingleTableColRef target) {
       this.source = source;
       this.target = target;
     }
@@ -705,14 +736,29 @@ public class LatticeSuggester {
   private abstract static class ColRef {
   }
 
+  /** Column reference that is within a single table. */
+  private interface SingleTableColRef {
+    TableRef tableRef();
+
+    int col(LatticeSpace space);
+  }
+
   /** Reference to a base column. */
-  private static class BaseColRef extends ColRef {
+  private static class BaseColRef extends ColRef implements SingleTableColRef {
     final TableRef t;
     final int c;
 
     private BaseColRef(TableRef t, int c) {
       this.t = t;
       this.c = c;
+    }
+
+    @Override public TableRef tableRef() {
+      return t;
+    }
+
+    @Override public int col(LatticeSpace space) {
+      return c;
     }
   }
 
@@ -722,8 +768,7 @@ public class LatticeSuggester {
     @Nonnull final RexNode e;
     final String alias;
 
-    private DerivedColRef(Iterable<TableRef> tableRefs, RexNode e,
-        String alias) {
+    DerivedColRef(Iterable<TableRef> tableRefs, RexNode e, String alias) {
       this.tableRefs = ImmutableList.copyOf(tableRefs);
       this.e = e;
       this.alias = alias;
@@ -731,6 +776,23 @@ public class LatticeSuggester {
 
     List<String> tableAliases() {
       return Util.transform(tableRefs, tableRef -> tableRef.table.alias);
+    }
+  }
+
+  /** Variant of {@link DerivedColRef} where all referenced expressions are in
+   * the same table. */
+  private static class SingleTableDerivedColRef extends DerivedColRef
+      implements SingleTableColRef {
+    SingleTableDerivedColRef(TableRef tableRef, RexNode e, String alias) {
+      super(ImmutableList.of(tableRef), e, alias);
+    }
+
+    @Override public TableRef tableRef() {
+      return tableRefs.get(0);
+    }
+
+    @Override public int col(LatticeSpace space) {
+      return space.registerExpression(tableRef().table, e);
     }
   }
 
@@ -751,5 +813,3 @@ public class LatticeSuggester {
   }
 
 }
-
-// End LatticeSuggester.java

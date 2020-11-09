@@ -90,7 +90,7 @@ public abstract class Values extends AbstractRelNode {
   /**
    * Creates a Values by parsing serialized output.
    */
-  public Values(RelInput input) {
+  protected Values(RelInput input) {
     this(input.getCluster(), input.getRowType("type"),
         input.getTuples("tuples"), input.getTraitSet());
   }
@@ -166,12 +166,12 @@ public abstract class Values extends AbstractRelNode {
   }
 
   // implement RelNode
-  public double estimateRowCount(RelMetadataQuery mq) {
+  @Override public double estimateRowCount(RelMetadataQuery mq) {
     return tuples.size();
   }
 
   // implement RelNode
-  public RelWriter explainTerms(RelWriter pw) {
+  @Override public RelWriter explainTerms(RelWriter pw) {
     // A little adapter just to get the tuples to come out
     // with curly brackets instead of square brackets.  Plus
     // more whitespace for readability.
@@ -194,5 +194,3 @@ public abstract class Values extends AbstractRelNode {
     return relWriter;
   }
 }
-
-// End Values.java

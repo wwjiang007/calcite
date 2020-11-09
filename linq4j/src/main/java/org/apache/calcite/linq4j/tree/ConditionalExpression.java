@@ -41,7 +41,7 @@ public class ConditionalExpression extends AbstractNode {
     this.expressionList = expressionList;
   }
 
-  public <R> R accept(Visitor<R> visitor) {
+  @Override public <R> R accept(Visitor<R> visitor) {
     return visitor.visit(this);
   }
 
@@ -83,5 +83,3 @@ public class ConditionalExpression extends AbstractNode {
     return Objects.hash(nodeType, type, expressionList);
   }
 }
-
-// End ConditionalExpression.java

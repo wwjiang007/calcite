@@ -24,6 +24,7 @@ import org.apache.calcite.materialize.Lattice;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.schema.AggregateFunction;
+import org.apache.calcite.schema.Function;
 import org.apache.calcite.schema.ScalarFunction;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaFactory;
@@ -100,6 +101,7 @@ public class ModelHandler {
     visit(root);
   }
 
+  // CHECKSTYLE: IGNORE 1
   /** @deprecated Use {@link #addFunctions}. */
   @Deprecated
   public static void create(SchemaPlus schema, String functionName,
@@ -144,8 +146,8 @@ public class ModelHandler {
       return;
     }
     if (methodName != null && methodName.equals("*")) {
-      for (Map.Entry<String, ScalarFunction> entry
-          : ScalarFunctionImpl.createAll(clazz).entries()) {
+      for (Map.Entry<String, Function> entry
+          : ScalarFunctionImpl.functions(clazz).entries()) {
         String name = entry.getKey();
         if (upCase) {
           name = name.toUpperCase(Locale.ROOT);
@@ -318,6 +320,8 @@ public class ModelHandler {
             builder.put(extraOperand.camelName,
                 ((JsonCustomSchema) jsonSchema).tables);
           }
+          break;
+        default:
           break;
         }
       }
@@ -577,5 +581,3 @@ public class ModelHandler {
     }
   }
 }
-
-// End ModelHandler.java

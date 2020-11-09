@@ -236,7 +236,7 @@ public class SqlMatchRecognize extends SqlCall {
   /**
    * Options for {@code AFTER MATCH} clause.
    */
-  public enum AfterOption {
+  public enum AfterOption implements Symbolizable {
     SKIP_TO_NEXT_ROW("SKIP TO NEXT ROW"),
     SKIP_PAST_LAST_ROW("SKIP PAST LAST ROW");
 
@@ -248,14 +248,6 @@ public class SqlMatchRecognize extends SqlCall {
 
     @Override public String toString() {
       return sql;
-    }
-
-    /**
-     * Creates a parse-tree node representing an occurrence of this symbol
-     * at a particular position in the parsed text.
-     */
-    public SqlLiteral symbol(SqlParserPos pos) {
-      return SqlLiteral.createSymbol(this, pos);
     }
   }
 
@@ -336,10 +328,8 @@ public class SqlMatchRecognize extends SqlCall {
       if (pattern.orderList != null && pattern.orderList.size() > 0) {
         writer.newlineAndIndent();
         writer.sep("ORDER BY");
-        final SqlWriter.Frame orderFrame =
-            writer.startList(SqlWriter.FrameTypeEnum.ORDER_BY_LIST);
-        unparseListClause(writer, pattern.orderList);
-        writer.endList(orderFrame);
+        writer.list(SqlWriter.FrameTypeEnum.ORDER_BY_LIST, SqlWriter.COMMA,
+            pattern.orderList);
       }
 
       if (pattern.measureList != null && pattern.measureList.size() > 0) {
@@ -404,5 +394,3 @@ public class SqlMatchRecognize extends SqlCall {
     }
   }
 }
-
-// End SqlMatchRecognize.java

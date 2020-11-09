@@ -152,7 +152,7 @@ public class CloneSchema extends AbstractSchema {
    * }</pre></blockquote>
    */
   public static class Factory implements SchemaFactory {
-    public Schema create(
+    @Override public Schema create(
         SchemaPlus parentSchema,
         String name,
         Map<String, Object> operand) {
@@ -163,5 +163,3 @@ public class CloneSchema extends AbstractSchema {
     }
   }
 }
-
-// End CloneSchema.java

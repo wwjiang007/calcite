@@ -27,7 +27,7 @@ import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import javax.annotation.Nullable;
 
 /**
- * Converts Calcite SUBSTRING call to Druid Expression when possible
+ * Converts Calcite SUBSTRING call to Druid Expression when possible.
  */
 public class SubstringOperatorConversion implements DruidSqlOperatorConverter {
   @Override public SqlOperator calciteOperator() {
@@ -81,5 +81,3 @@ public class SubstringOperatorConversion implements DruidSqlOperatorConverter {
     return DruidQuery.format("substring(%s, %s, %s)", arg, startIndex, length);
   }
 }
-
-// End SubstringOperatorConversion.java

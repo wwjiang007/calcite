@@ -78,12 +78,10 @@ class ProfilerLatticeStatisticProvider implements LatticeStatisticProvider {
     })::get;
   }
 
-  public double cardinality(List<Lattice.Column> columns) {
+  @Override public double cardinality(List<Lattice.Column> columns) {
     final ImmutableBitSet build = Lattice.Column.toBitSet(columns);
     final double cardinality = profile.get().cardinality(build);
 //    System.out.println(columns + ": " + cardinality);
     return cardinality;
   }
 }
-
-// End ProfilerLatticeStatisticProvider.java

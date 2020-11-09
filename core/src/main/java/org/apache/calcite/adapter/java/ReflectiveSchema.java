@@ -17,6 +17,7 @@
 package org.apache.calcite.adapter.java;
 
 import org.apache.calcite.DataContext;
+import org.apache.calcite.adapter.enumerable.EnumUtils;
 import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.linq4j.Enumerator;
 import org.apache.calcite.linq4j.Linq4j;
@@ -26,7 +27,6 @@ import org.apache.calcite.linq4j.function.Function1;
 import org.apache.calcite.linq4j.tree.Expression;
 import org.apache.calcite.linq4j.tree.Expressions;
 import org.apache.calcite.linq4j.tree.Primitive;
-import org.apache.calcite.linq4j.tree.Types;
 import org.apache.calcite.rel.RelReferentialConstraint;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
@@ -129,10 +129,16 @@ public class ReflectiveSchema
         FieldTable table =
             (FieldTable) tableMap.get(Util.last(rc.getSourceQualifiedName()));
         assert table != null;
+        List<RelReferentialConstraint> referentialConstraints =
+            table.getStatistic().getReferentialConstraints();
+        if (referentialConstraints == null) {
+          // This enables to keep the same Statistics.of below
+          referentialConstraints = ImmutableList.of();
+        }
         table.statistic = Statistics.of(
             ImmutableList.copyOf(
                 Iterables.concat(
-                    table.getStatistic().getReferentialConstraints(),
+                    referentialConstraints,
                     Collections.singleton(rc))));
       }
     }
@@ -167,13 +173,13 @@ public class ReflectiveSchema
   /** Returns an expression for the object wrapped by this schema (not the
    * schema itself). */
   Expression getTargetExpression(SchemaPlus parentSchema, String name) {
-    return Types.castIfNecessary(
-        target.getClass(),
+    return EnumUtils.convert(
         Expressions.call(
             Schemas.unwrap(
                 getExpression(parentSchema, name),
                 ReflectiveSchema.class),
-            BuiltInMethod.REFLECTIVE_SCHEMA_GET_TARGET.method));
+            BuiltInMethod.REFLECTIVE_SCHEMA_GET_TARGET.method),
+        target.getClass());
   }
 
   /** Returns a table based on a particular field of this schema. If the
@@ -196,7 +202,7 @@ public class ReflectiveSchema
   }
 
   /** Deduces the element type of a collection;
-   * same logic as {@link #toEnumerable} */
+   * same logic as {@link #toEnumerable}. */
   private static Type getElementType(Class clazz) {
     if (clazz.isArray()) {
       return clazz.getComponentType();
@@ -226,24 +232,22 @@ public class ReflectiveSchema
   private static class ReflectiveTable
       extends AbstractQueryableTable
       implements Table, ScannableTable {
-    private final Type elementType;
     private final Enumerable enumerable;
 
     ReflectiveTable(Type elementType, Enumerable enumerable) {
       super(elementType);
-      this.elementType = elementType;
       this.enumerable = enumerable;
     }
 
-    public RelDataType getRowType(RelDataTypeFactory typeFactory) {
+    @Override public RelDataType getRowType(RelDataTypeFactory typeFactory) {
       return ((JavaTypeFactory) typeFactory).createType(elementType);
     }
 
-    public Statistic getStatistic() {
+    @Override public Statistic getStatistic() {
       return Statistics.UNKNOWN;
     }
 
-    public Enumerable<Object[]> scan(DataContext root) {
+    @Override public Enumerable<Object[]> scan(DataContext root) {
       if (elementType == Object[].class) {
         //noinspection unchecked
         return enumerable;
@@ -253,12 +257,12 @@ public class ReflectiveSchema
       }
     }
 
-    public <T> Queryable<T> asQueryable(QueryProvider queryProvider,
+    @Override public <T> Queryable<T> asQueryable(QueryProvider queryProvider,
         SchemaPlus schema, String tableName) {
       return new AbstractTableQueryable<T>(queryProvider, schema, this,
           tableName) {
         @SuppressWarnings("unchecked")
-        public Enumerator<T> enumerator() {
+        @Override public Enumerator<T> enumerator() {
           return (Enumerator<T>) enumerable.enumerator();
         }
       };
@@ -295,7 +299,7 @@ public class ReflectiveSchema
    * }</pre></blockquote>
    */
   public static class Factory implements SchemaFactory {
-    public Schema create(SchemaPlus parentSchema, String name,
+    @Override public Schema create(SchemaPlus parentSchema, String name,
         Map<String, Object> operand) {
       Class<?> clazz;
       Object target;
@@ -344,11 +348,11 @@ public class ReflectiveSchema
           + "expanded";
     }
 
-    public String toString() {
+    @Override public String toString() {
       return "Member {method=" + method + "}";
     }
 
-    public TranslatableTable apply(final List<Object> arguments) {
+    @Override public TranslatableTable apply(final List<Object> arguments) {
       try {
         final Object o = method.invoke(schema.getTarget(), arguments.toArray());
         return (TranslatableTable) o;
@@ -376,7 +380,7 @@ public class ReflectiveSchema
       this.statistic = statistic;
     }
 
-    public String toString() {
+    @Override public String toString() {
       return "Relation {field=" + field.getName() + "}";
     }
 
@@ -400,7 +404,7 @@ public class ReflectiveSchema
       this.fields = elementType.getFields();
     }
 
-    public Object[] apply(Object o) {
+    @Override public Object[] apply(Object o) {
       try {
         final Object[] objects = new Object[fields.length];
         for (int i = 0; i < fields.length; i++) {
@@ -413,5 +417,3 @@ public class ReflectiveSchema
     }
   }
 }
-
-// End ReflectiveSchema.java

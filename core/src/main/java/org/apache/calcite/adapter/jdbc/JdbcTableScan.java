@@ -25,21 +25,21 @@ import org.apache.calcite.rel.core.TableScan;
 import com.google.common.collect.ImmutableList;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Relational expression representing a scan of a table in a JDBC data source.
  */
 public class JdbcTableScan extends TableScan implements JdbcRel {
-  protected final JdbcTable jdbcTable;
+  public final JdbcTable jdbcTable;
 
   protected JdbcTableScan(
       RelOptCluster cluster,
       RelOptTable table,
       JdbcTable jdbcTable,
       JdbcConvention jdbcConvention) {
-    super(cluster, cluster.traitSetOf(jdbcConvention), table);
-    this.jdbcTable = jdbcTable;
-    assert jdbcTable != null;
+    super(cluster, cluster.traitSetOf(jdbcConvention), ImmutableList.of(), table);
+    this.jdbcTable = Objects.requireNonNull(jdbcTable);
   }
 
   @Override public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
@@ -48,10 +48,8 @@ public class JdbcTableScan extends TableScan implements JdbcRel {
         getCluster(), table, jdbcTable, (JdbcConvention) getConvention());
   }
 
-  public JdbcImplementor.Result implement(JdbcImplementor implementor) {
+  @Override public JdbcImplementor.Result implement(JdbcImplementor implementor) {
     return implementor.result(jdbcTable.tableName(),
         ImmutableList.of(JdbcImplementor.Clause.FROM), this, null);
   }
 }
-
-// End JdbcTableScan.java

@@ -16,11 +16,9 @@
  */
 package org.apache.calcite.prepare;
 
-import org.apache.calcite.adapter.enumerable.EnumerableTableScan;
 import org.apache.calcite.jdbc.CalciteSchema;
 import org.apache.calcite.linq4j.tree.Expression;
 import org.apache.calcite.materialize.Lattice;
-import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptSchema;
 import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.rel.RelCollation;
@@ -35,7 +33,6 @@ import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rel.type.RelProtoDataType;
 import org.apache.calcite.rel.type.RelRecordType;
-import org.apache.calcite.runtime.Hook;
 import org.apache.calcite.schema.ColumnStrategy;
 import org.apache.calcite.schema.FilterableTable;
 import org.apache.calcite.schema.ModifiableTable;
@@ -113,6 +110,16 @@ public class RelOptTableImpl extends Prepare.AbstractPreparingTable {
         c -> expression, null);
   }
 
+  public static RelOptTableImpl create(
+      RelOptSchema schema,
+      RelDataType rowType,
+      List<String> names,
+      Table table,
+      Expression expression) {
+    return new RelOptTableImpl(schema, rowType, names, table,
+        c -> expression, table.getStatistic().getRowCount());
+  }
+
   public static RelOptTableImpl create(RelOptSchema schema, RelDataType rowType,
       Table table, Path path) {
     final SchemaPlus schemaPlus = MySchemaPlus.create(path);
@@ -134,6 +141,15 @@ public class RelOptTableImpl extends Prepare.AbstractPreparingTable {
   public RelOptTableImpl copy(RelDataType newRowType) {
     return new RelOptTableImpl(this.schema, newRowType, this.names, this.table,
         this.expressionFunction, this.rowCount);
+  }
+
+  @Override public String toString() {
+    return "RelOptTableImpl{"
+        + "schema=" + schema
+        + ", names= " + names
+        + ", table=" + table
+        + ", rowType=" + rowType
+        + '}';
   }
 
   private static Function<Class, Expression> getClassExpressionFunction(
@@ -170,7 +186,7 @@ public class RelOptTableImpl extends Prepare.AbstractPreparingTable {
     return new RelOptTableImpl(schema, rowType, names, table, null, null);
   }
 
-  public <T> T unwrap(Class<T> clazz) {
+  @Override public <T> T unwrap(Class<T> clazz) {
     if (clazz.isInstance(this)) {
       return clazz.cast(this);
     }
@@ -191,7 +207,7 @@ public class RelOptTableImpl extends Prepare.AbstractPreparingTable {
     return null;
   }
 
-  public Expression getExpression(Class clazz) {
+  @Override public Expression getExpression(Class clazz) {
     if (expressionFunction == null) {
       return null;
     }
@@ -215,7 +231,7 @@ public class RelOptTableImpl extends Prepare.AbstractPreparingTable {
     return (this.table == null)
         ? super.hashCode() : this.table.hashCode();
   }
-  public double getRowCount() {
+  @Override public double getRowCount() {
     if (rowCount != null) {
       return rowCount;
     }
@@ -228,11 +244,11 @@ public class RelOptTableImpl extends Prepare.AbstractPreparingTable {
     return 100d;
   }
 
-  public RelOptSchema getRelOptSchema() {
+  @Override public RelOptSchema getRelOptSchema() {
     return schema;
   }
 
-  public RelNode toRel(ToRelContext context) {
+  @Override public RelNode toRel(ToRelContext context) {
     // Make sure rowType's list is immutable. If rowType is DynamicRecordType, creates a new
     // RelOptTable by replacing with immutable RelRecordType using the same field list.
     if (this.getRowType().isDynamicStruct()) {
@@ -268,58 +284,46 @@ public class RelOptTableImpl extends Prepare.AbstractPreparingTable {
     if (table instanceof TranslatableTable) {
       return ((TranslatableTable) table).toRel(context, this);
     }
-    final RelOptCluster cluster = context.getCluster();
-    if (Hook.ENABLE_BINDABLE.get(false)) {
-      return LogicalTableScan.create(cluster, this);
-    }
-    if (CalcitePrepareImpl.ENABLE_ENUMERABLE
-        && table instanceof QueryableTable) {
-      return EnumerableTableScan.create(cluster, this);
-    }
-    if (table instanceof ScannableTable
-        || table instanceof FilterableTable
-        || table instanceof ProjectableFilterableTable) {
-      return LogicalTableScan.create(cluster, this);
-    }
-    if (CalcitePrepareImpl.ENABLE_ENUMERABLE) {
-      return EnumerableTableScan.create(cluster, this);
-    }
-    throw new AssertionError();
+    return LogicalTableScan.create(context.getCluster(), this, context.getTableHints());
   }
 
-  public List<RelCollation> getCollationList() {
+  @Override public List<RelCollation> getCollationList() {
     if (table != null) {
       return table.getStatistic().getCollations();
     }
     return ImmutableList.of();
   }
 
-  public RelDistribution getDistribution() {
+  @Override public RelDistribution getDistribution() {
     if (table != null) {
       return table.getStatistic().getDistribution();
     }
     return RelDistributionTraitDef.INSTANCE.getDefault();
   }
 
-  public boolean isKey(ImmutableBitSet columns) {
+  @Override public boolean isKey(ImmutableBitSet columns) {
     if (table != null) {
       return table.getStatistic().isKey(columns);
     }
     return false;
   }
 
-  public List<RelReferentialConstraint> getReferentialConstraints() {
+  @Override public List<ImmutableBitSet> getKeys() {
+    return table.getStatistic().getKeys();
+  }
+
+  @Override public List<RelReferentialConstraint> getReferentialConstraints() {
     if (table != null) {
       return table.getStatistic().getReferentialConstraints();
     }
     return ImmutableList.of();
   }
 
-  public RelDataType getRowType() {
+  @Override public RelDataType getRowType() {
     return rowType;
   }
 
-  public boolean supportsModality(SqlModality modality) {
+  @Override public boolean supportsModality(SqlModality modality) {
     switch (modality) {
     case STREAM:
       return table instanceof StreamableTable;
@@ -332,12 +336,16 @@ public class RelOptTableImpl extends Prepare.AbstractPreparingTable {
     return table instanceof TemporalTable;
   }
 
-  public List<String> getQualifiedName() {
+  @Override public List<String> getQualifiedName() {
     return names;
   }
 
-  public SqlMonotonicity getMonotonicity(String columnName) {
-    for (RelCollation collation : table.getStatistic().getCollations()) {
+  @Override public SqlMonotonicity getMonotonicity(String columnName) {
+    List<RelCollation> collations = table.getStatistic().getCollations();
+    if (collations == null) {
+      return null;
+    }
+    for (RelCollation collation : collations) {
       final RelFieldCollation fieldCollation =
           collation.getFieldCollations().get(0);
       final int fieldIndex = fieldCollation.getFieldIndex();
@@ -349,7 +357,7 @@ public class RelOptTableImpl extends Prepare.AbstractPreparingTable {
     return SqlMonotonicity.NOT_MONOTONIC;
   }
 
-  public SqlAccessType getAllowedAccess() {
+  @Override public SqlAccessType getAllowedAccess() {
     return SqlAccessType.ALL;
   }
 
@@ -360,11 +368,11 @@ public class RelOptTableImpl extends Prepare.AbstractPreparingTable {
         Util.first(table.unwrap(InitializerExpressionFactory.class),
             NullInitializerExpressionFactory.INSTANCE);
     return new AbstractList<ColumnStrategy>() {
-      public int size() {
+      @Override public int size() {
         return fieldCount;
       }
 
-      public ColumnStrategy get(int index) {
+      @Override public ColumnStrategy get(int index) {
         return ief.generationStrategy(table, index);
       }
     };
@@ -379,6 +387,9 @@ public class RelOptTableImpl extends Prepare.AbstractPreparingTable {
       switch (strategies.get(j)) {
       case VIRTUAL:
         ++n;
+        break;
+      default:
+        break;
       }
     }
     return i - n;
@@ -523,5 +534,3 @@ public class RelOptTableImpl extends Prepare.AbstractPreparingTable {
     }
   }
 }
-
-// End RelOptTableImpl.java

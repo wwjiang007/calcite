@@ -17,8 +17,8 @@
 package org.apache.calcite.sql.parser;
 
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.util.Util;
 
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
 import java.io.Serializable;
@@ -85,11 +85,11 @@ public class SqlParserPos implements Serializable {
 
   //~ Methods ----------------------------------------------------------------
 
-  public int hashCode() {
+  @Override public int hashCode() {
     return Objects.hash(lineNumber, columnNumber, endLineNumber, endColumnNumber);
   }
 
-  public boolean equals(Object o) {
+  @Override public boolean equals(Object o) {
     return o == this
         || o instanceof SqlParserPos
         && this.lineNumber == ((SqlParserPos) o).lineNumber
@@ -98,32 +98,24 @@ public class SqlParserPos implements Serializable {
         && this.endColumnNumber == ((SqlParserPos) o).endColumnNumber;
   }
 
-  /**
-   * @return 1-based starting line number
-   */
+  /** Returns 1-based starting line number. */
   public int getLineNum() {
     return lineNumber;
   }
 
-  /**
-   * @return 1-based starting column number
-   */
+  /** Returns 1-based starting column number. */
   public int getColumnNum() {
     return columnNumber;
   }
 
-  /**
-   * @return 1-based end line number (same as starting line number if the
-   * ParserPos is a point, not a range)
-   */
+  /** Returns 1-based end line number (same as starting line number if the
+   * ParserPos is a point, not a range). */
   public int getEndLineNum() {
     return endLineNumber;
   }
 
-  /**
-   * @return 1-based end column number (same as starting column number if the
-   * ParserPos is a point, not a range)
-   */
+  /** Returns 1-based end column number (same as starting column number if the
+   * ParserPos is a point, not a range). */
   public int getEndColumnNum() {
     return endColumnNumber;
   }
@@ -141,7 +133,7 @@ public class SqlParserPos implements Serializable {
     }
   }
 
-  /** @return true if this SqlParserPos is quoted. **/
+  /** Returns whether this SqlParserPos is quoted. */
   public boolean isQuoted() {
     return false;
   }
@@ -193,17 +185,17 @@ public class SqlParserPos implements Serializable {
 
   private static List<SqlParserPos> toPos(final SqlNode[] nodes) {
     return new AbstractList<SqlParserPos>() {
-      public SqlParserPos get(int index) {
+      @Override public SqlParserPos get(int index) {
         return nodes[index].getParserPosition();
       }
-      public int size() {
+      @Override public int size() {
         return nodes.length;
       }
     };
   }
 
-  private static Iterable<SqlParserPos> toPos(Iterable<SqlNode> nodes) {
-    return Iterables.transform(nodes, SqlNode::getParserPosition);
+  private static Iterable<SqlParserPos> toPos(Iterable<? extends SqlNode> nodes) {
+    return Util.transform(nodes, node -> node == null ? null : node.getParserPosition());
   }
 
   /**
@@ -211,7 +203,7 @@ public class SqlParserPos implements Serializable {
    * which spans from the beginning of the first to the end of the last.
    */
   public static SqlParserPos sum(final List<? extends SqlNode> nodes) {
-    return sum(Lists.transform(nodes, SqlNode::getParserPosition));
+    return sum(Util.transform(nodes, SqlNode::getParserPosition));
   }
 
   /**
@@ -238,10 +230,10 @@ public class SqlParserPos implements Serializable {
       return positions.get(0);
     default:
       final List<SqlParserPos> poses = new AbstractList<SqlParserPos>() {
-        public SqlParserPos get(int index) {
+        @Override public SqlParserPos get(int index) {
           return positions.get(index + 1);
         }
-        public int size() {
+        @Override public int size() {
           return positions.size() - 1;
         }
       };
@@ -327,5 +319,3 @@ public class SqlParserPos implements Serializable {
     }
   }
 }
-
-// End SqlParserPos.java

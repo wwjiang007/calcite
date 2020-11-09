@@ -28,6 +28,8 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.util.BuiltInMethod;
 import org.apache.calcite.util.Pair;
 
+import com.google.common.base.Preconditions;
+
 /** Implementation of {@link org.apache.calcite.rel.core.Sort} in
  * {@link org.apache.calcite.adapter.enumerable.EnumerableConvention enumerable calling convention}. */
 public class EnumerableSort extends Sort implements EnumerableRel {
@@ -41,6 +43,8 @@ public class EnumerableSort extends Sort implements EnumerableRel {
     super(cluster, traitSet, input, collation, offset, fetch);
     assert getConvention() instanceof EnumerableConvention;
     assert getConvention() == input.getConvention();
+    Preconditions.checkArgument(fetch == null);
+    Preconditions.checkArgument(offset == null);
   }
 
   /** Creates an EnumerableSort. */
@@ -64,7 +68,7 @@ public class EnumerableSort extends Sort implements EnumerableRel {
         offset, fetch);
   }
 
-  public Result implement(EnumerableRelImplementor implementor, Prefer pref) {
+  @Override public Result implement(EnumerableRelImplementor implementor, Prefer pref) {
     final BlockBuilder builder = new BlockBuilder();
     final EnumerableRel child = (EnumerableRel) getInput();
     final Result result = implementor.visitChild(this, 0, child, pref);
@@ -92,5 +96,3 @@ public class EnumerableSort extends Sort implements EnumerableRel {
     return implementor.result(physType, builder.toBlock());
   }
 }
-
-// End EnumerableSort.java

@@ -33,6 +33,7 @@ import org.apache.calcite.util.ImmutableBitSet;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.common.collect.ImmutableList;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -51,15 +52,14 @@ public class ElasticsearchAggregate extends Aggregate implements ElasticsearchRe
       EnumSet.of(SqlKind.COUNT, SqlKind.MAX, SqlKind.MIN, SqlKind.AVG,
           SqlKind.SUM, SqlKind.ANY_VALUE);
 
-  /** Creates a ElasticsearchAggregate */
+  /** Creates an ElasticsearchAggregate. */
   ElasticsearchAggregate(RelOptCluster cluster,
       RelTraitSet traitSet,
       RelNode input,
-      boolean indicator,
       ImmutableBitSet groupSet,
       List<ImmutableBitSet> groupSets,
       List<AggregateCall> aggCalls) throws InvalidRelException  {
-    super(cluster, traitSet, input, indicator, groupSet, groupSets, aggCalls);
+    super(cluster, traitSet, ImmutableList.of(), input, groupSet, groupSets, aggCalls);
 
     if (getConvention() != input.getConvention()) {
       String message = String.format(Locale.ROOT, "%s != %s", getConvention(),
@@ -92,16 +92,26 @@ public class ElasticsearchAggregate extends Aggregate implements ElasticsearchRe
               + "Yours is %s", Group.SIMPLE, getGroupType());
       throw new InvalidRelException(message);
     }
-
   }
 
-  @Override public Aggregate copy(RelTraitSet traitSet, RelNode input, boolean indicator,
+  @Deprecated // to be removed before 2.0
+  ElasticsearchAggregate(RelOptCluster cluster,
+      RelTraitSet traitSet,
+      RelNode input,
+      boolean indicator,
+      ImmutableBitSet groupSet,
+      List<ImmutableBitSet> groupSets,
+      List<AggregateCall> aggCalls) throws InvalidRelException {
+    this(cluster, traitSet, input, groupSet, groupSets, aggCalls);
+    checkIndicator(indicator);
+  }
+
+  @Override public Aggregate copy(RelTraitSet traitSet, RelNode input,
       ImmutableBitSet groupSet, List<ImmutableBitSet> groupSets,
       List<AggregateCall> aggCalls) {
     try {
       return new ElasticsearchAggregate(getCluster(), traitSet, input,
-          indicator, groupSet, groupSets,
-          aggCalls);
+          groupSet, groupSets, aggCalls);
     } catch (InvalidRelException e) {
       throw new AssertionError(e);
     }
@@ -177,5 +187,3 @@ public class ElasticsearchAggregate extends Aggregate implements ElasticsearchRe
   }
 
 }
-
-// End ElasticsearchAggregate.java

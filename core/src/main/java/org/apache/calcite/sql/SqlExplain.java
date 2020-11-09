@@ -40,16 +40,8 @@ public class SqlExplain extends SqlCall {
   /**
    * The level of abstraction with which to display the plan.
    */
-  public enum Depth {
-    TYPE, LOGICAL, PHYSICAL;
-
-    /**
-     * Creates a parse-tree node representing an occurrence of this symbol
-     * at a particular position in the parsed text.
-     */
-    public SqlLiteral symbol(SqlParserPos pos) {
-      return SqlLiteral.createSymbol(this, pos);
-    }
+  public enum Depth implements Symbolizable {
+    TYPE, LOGICAL, PHYSICAL
   }
 
   //~ Instance fields --------------------------------------------------------
@@ -82,11 +74,11 @@ public class SqlExplain extends SqlCall {
     return SqlKind.EXPLAIN;
   }
 
-  public SqlOperator getOperator() {
+  @Override public SqlOperator getOperator() {
     return OPERATOR;
   }
 
-  public List<SqlNode> getOperandList() {
+  @Override public List<SqlNode> getOperandList() {
     return ImmutableNullableList.of(explicandum, detailLevel, depth, format);
   }
 
@@ -110,14 +102,14 @@ public class SqlExplain extends SqlCall {
   }
 
   /**
-   * @return the underlying SQL statement to be explained
+   * Returns the underlying SQL statement to be explained.
    */
   public SqlNode getExplicandum() {
     return explicandum;
   }
 
   /**
-   * @return detail level to be generated
+   * Return the detail level to be generated.
    */
   public SqlExplainLevel getDetailLevel() {
     return detailLevel.symbolValue(SqlExplainLevel.class);
@@ -131,21 +123,21 @@ public class SqlExplain extends SqlCall {
   }
 
   /**
-   * @return the number of dynamic parameters in the statement
+   * Returns the number of dynamic parameters in the statement.
    */
   public int getDynamicParamCount() {
     return dynamicParameterCount;
   }
 
   /**
-   * @return whether physical plan implementation should be returned
+   * Returns whether physical plan implementation should be returned.
    */
   public boolean withImplementation() {
     return getDepth() == Depth.PHYSICAL;
   }
 
   /**
-   * @return whether type should be returned
+   * Returns whether type should be returned.
    */
   public boolean withType() {
     return getDepth() == Depth.TYPE;
@@ -172,7 +164,7 @@ public class SqlExplain extends SqlCall {
    * Returns whether result is to be in JSON format.
    */
   public boolean isJson() {
-    return getFormat() == SqlExplainFormat.XML;
+    return getFormat() == SqlExplainFormat.JSON;
   }
 
   @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
@@ -186,6 +178,8 @@ public class SqlExplain extends SqlCall {
       break;
     case ALL_ATTRIBUTES:
       writer.keyword("INCLUDING ALL ATTRIBUTES");
+      break;
+    default:
       break;
     }
     switch (getDepth()) {
@@ -208,6 +202,9 @@ public class SqlExplain extends SqlCall {
     case JSON:
       writer.keyword("AS JSON");
       break;
+    case DOT:
+      writer.keyword("AS DOT");
+      break;
     default:
     }
     writer.keyword("FOR");
@@ -216,5 +213,3 @@ public class SqlExplain extends SqlCall {
         writer, getOperator().getLeftPrec(), getOperator().getRightPrec());
   }
 }
-
-// End SqlExplain.java

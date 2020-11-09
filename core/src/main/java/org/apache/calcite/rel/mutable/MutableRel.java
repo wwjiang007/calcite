@@ -82,7 +82,7 @@ public abstract class MutableRel {
 
   public abstract List<MutableRel> getInputs();
 
-  public abstract MutableRel clone();
+  @Override public abstract MutableRel clone();
 
   public abstract void childrenAccept(MutableRelVisitor visitor);
 
@@ -120,7 +120,7 @@ public abstract class MutableRel {
    * Implementation of MutableVisitor that dumps the details
    * of a MutableRel tree.
    */
-  private class MutableRelDumper extends MutableRelVisitor {
+  private static class MutableRelDumper extends MutableRelVisitor {
     private final StringBuilder buf = new StringBuilder();
     private int level;
 
@@ -144,5 +144,3 @@ public abstract class MutableRel {
   }
 
 }
-
-// End MutableRel.java

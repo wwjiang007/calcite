@@ -36,32 +36,30 @@ public abstract class BaseQueryable<TSource>
   protected final Type elementType;
   protected final Expression expression;
 
-  public BaseQueryable(QueryProvider provider, Type elementType,
+  protected BaseQueryable(QueryProvider provider, Type elementType,
       Expression expression) {
     this.provider = provider;
     this.elementType = elementType;
     this.expression = expression;
   }
 
-  public QueryProvider getProvider() {
+  @Override public QueryProvider getProvider() {
     return provider;
   }
 
-  public Type getElementType() {
+  @Override public Type getElementType() {
     return elementType;
   }
 
-  public Expression getExpression() {
+  @Override public Expression getExpression() {
     return expression;
   }
 
-  public Iterator<TSource> iterator() {
+  @Override public Iterator<TSource> iterator() {
     return Linq4j.enumeratorIterator(enumerator());
   }
 
-  public Enumerator<TSource> enumerator() {
+  @Override public Enumerator<TSource> enumerator() {
     return provider.executeQuery(this);
   }
 }
-
-// End BaseQueryable.java

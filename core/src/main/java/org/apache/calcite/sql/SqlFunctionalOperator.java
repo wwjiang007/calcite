@@ -47,13 +47,11 @@ public class SqlFunctionalOperator extends SqlSpecialOperator {
 
   //~ Methods ----------------------------------------------------------------
 
-  public void unparse(
+  @Override public void unparse(
       SqlWriter writer,
       SqlCall call,
       int leftPrec,
       int rightPrec) {
-    SqlUtil.unparseFunctionSyntax(this, writer, call);
+    SqlUtil.unparseFunctionSyntax(this, writer, call, false);
   }
 }
-
-// End SqlFunctionalOperator.java

@@ -25,27 +25,25 @@ package org.apache.calcite.linq4j;
 public abstract class TransformedEnumerator<F, E> implements Enumerator<E> {
   protected final Enumerator<F> enumerator;
 
-  public TransformedEnumerator(Enumerator<F> enumerator) {
+  protected TransformedEnumerator(Enumerator<F> enumerator) {
     this.enumerator = enumerator;
   }
 
   protected abstract E transform(F from);
 
-  public boolean moveNext() {
+  @Override public boolean moveNext() {
     return enumerator.moveNext();
   }
 
-  public E current() {
+  @Override public E current() {
     return transform(enumerator.current());
   }
 
-  public void reset() {
+  @Override public void reset() {
     enumerator.reset();
   }
 
-  public void close() {
+  @Override public void close() {
     enumerator.close();
   }
 }
-
-// End TransformedEnumerator.java

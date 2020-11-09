@@ -55,7 +55,7 @@ public class MetadataFactoryImpl implements MetadataFactory {
     });
   }
 
-  public <M extends Metadata> M query(RelNode rel, RelMetadataQuery mq,
+  @Override public <M extends Metadata> M query(RelNode rel, RelMetadataQuery mq,
       Class<M> metadataClazz) {
     try {
       //noinspection unchecked
@@ -64,10 +64,7 @@ public class MetadataFactoryImpl implements MetadataFactory {
       final Metadata apply = cache.get(key).bind(rel, mq);
       return metadataClazz.cast(apply);
     } catch (UncheckedExecutionException | ExecutionException e) {
-      Util.throwIfUnchecked(e.getCause());
-      throw new RuntimeException(e.getCause());
+      throw Util.throwAsRuntime(Util.causeOrSelf(e));
     }
   }
 }
-
-// End MetadataFactoryImpl.java

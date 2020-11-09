@@ -40,7 +40,7 @@ public class ExplicitOperandTypeInference implements SqlOperandTypeInference {
 
   //~ Methods ----------------------------------------------------------------
 
-  public void inferOperandTypes(
+  @Override public void inferOperandTypes(
       SqlCallBinding callBinding,
       RelDataType returnType,
       RelDataType[] operandTypes) {
@@ -53,5 +53,3 @@ public class ExplicitOperandTypeInference implements SqlOperandTypeInference {
     paramTypes.toArray(operandTypes);
   }
 }
-
-// End ExplicitOperandTypeInference.java

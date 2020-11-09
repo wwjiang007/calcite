@@ -32,14 +32,17 @@ import org.apache.calcite.sql.fun.SqlFloorFunction;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.type.ReturnTypes;
 
+import static org.apache.calcite.util.RelToSqlConverterUtil.unparseHiveTrim;
+
 /**
  * A <code>SqlDialect</code> implementation for the APACHE SPARK database.
  */
 public class SparkSqlDialect extends SqlDialect {
-  public static final SqlDialect DEFAULT =
-      new SparkSqlDialect(EMPTY_CONTEXT
-          .withDatabaseProduct(DatabaseProduct.SPARK)
-          .withNullCollation(NullCollation.LOW));
+  public static final SqlDialect.Context DEFAULT_CONTEXT = SqlDialect.EMPTY_CONTEXT
+      .withDatabaseProduct(SqlDialect.DatabaseProduct.SPARK)
+      .withNullCollation(NullCollation.LOW);
+
+  public static final SqlDialect DEFAULT = new SparkSqlDialect(DEFAULT_CONTEXT);
 
   private static final SqlFunction SPARKSQL_SUBSTRING =
       new SqlFunction("SUBSTRING", SqlKind.OTHER_FUNCTION,
@@ -65,6 +68,17 @@ public class SparkSqlDialect extends SqlDialect {
     return JoinType.CROSS;
   }
 
+  @Override public boolean supportsGroupByWithRollup() {
+    return true;
+  }
+
+  @Override public boolean supportsNestedAggregations() {
+    return false;
+  }
+
+  @Override public boolean supportsGroupByWithCube() {
+    return true;
+  }
 
   @Override public void unparseOffsetFetch(SqlWriter writer, SqlNode offset,
       SqlNode fetch) {
@@ -74,7 +88,7 @@ public class SparkSqlDialect extends SqlDialect {
   @Override public void unparseCall(SqlWriter writer, SqlCall call,
       int leftPrec, int rightPrec) {
     if (call.getOperator() == SqlStdOperatorTable.SUBSTRING) {
-      SqlUtil.unparseFunctionSyntax(SPARKSQL_SUBSTRING, writer, call);
+      SqlUtil.unparseFunctionSyntax(SPARKSQL_SUBSTRING, writer, call, false);
     } else {
       switch (call.getKind()) {
       case FLOOR:
@@ -90,12 +104,12 @@ public class SparkSqlDialect extends SqlDialect {
             timeUnitNode.getParserPosition());
         SqlFloorFunction.unparseDatetimeFunction(writer, call2, "DATE_TRUNC", false);
         break;
-
+      case TRIM:
+        unparseHiveTrim(writer, call, leftPrec, rightPrec);
+        break;
       default:
         super.unparseCall(writer, call, leftPrec, rightPrec);
       }
     }
   }
 }
-
-// End SparkSqlDialect.java

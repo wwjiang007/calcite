@@ -52,13 +52,13 @@ public class ListSqlOperatorTable implements SqlOperatorTable {
     operatorList.add(op);
   }
 
-  public void lookupOperatorOverloads(SqlIdentifier opName,
+  @Override public void lookupOperatorOverloads(SqlIdentifier opName,
       SqlFunctionCategory category,
       SqlSyntax syntax,
       List<SqlOperator> operatorList,
       SqlNameMatcher nameMatcher) {
     for (SqlOperator operator : this.operatorList) {
-      if (operator.getSyntax() != syntax) {
+      if (operator.getSyntax().family != syntax) {
         continue;
       }
       if (!opName.isSimple()
@@ -82,9 +82,7 @@ public class ListSqlOperatorTable implements SqlOperatorTable {
     }
   }
 
-  public List<SqlOperator> getOperatorList() {
+  @Override public List<SqlOperator> getOperatorList() {
     return operatorList;
   }
 }
-
-// End ListSqlOperatorTable.java

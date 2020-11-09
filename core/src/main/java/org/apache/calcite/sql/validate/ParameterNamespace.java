@@ -27,6 +27,7 @@ import org.apache.calcite.sql.SqlNode;
 class ParameterNamespace extends AbstractNamespace {
   //~ Instance fields --------------------------------------------------------
 
+  @SuppressWarnings("HidingField")
   private final RelDataType type;
 
   //~ Constructors -----------------------------------------------------------
@@ -38,17 +39,15 @@ class ParameterNamespace extends AbstractNamespace {
 
   //~ Methods ----------------------------------------------------------------
 
-  public SqlNode getNode() {
+  @Override public SqlNode getNode() {
     return null;
   }
 
-  public RelDataType validateImpl(RelDataType targetRowType) {
+  @Override public RelDataType validateImpl(RelDataType targetRowType) {
     return type;
   }
 
-  public RelDataType getRowType() {
+  @Override public RelDataType getRowType() {
     return type;
   }
 }
-
-// End ParameterNamespace.java

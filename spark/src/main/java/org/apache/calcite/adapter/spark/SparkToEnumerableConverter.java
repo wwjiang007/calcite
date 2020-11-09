@@ -66,7 +66,7 @@ public class SparkToEnumerableConverter
     return super.computeSelfCost(planner, mq).multiplyBy(.01);
   }
 
-  public Result implement(EnumerableRelImplementor implementor, Prefer pref) {
+  @Override public Result implement(EnumerableRelImplementor implementor, Prefer pref) {
     // Generate:
     //   RDD rdd = ...;
     //   return SparkRuntime.asEnumerable(rdd);
@@ -101,26 +101,24 @@ public class SparkToEnumerableConverter
       this.implementor = implementor;
     }
 
-    public SparkRel.Result result(PhysType physType,
+    @Override public SparkRel.Result result(PhysType physType,
         BlockStatement blockStatement) {
       return new SparkRel.Result(physType, blockStatement);
     }
 
-    SparkRel.Result visitInput(SparkRel parent, int ordinal, SparkRel input) {
+    @Override SparkRel.Result visitInput(SparkRel parent, int ordinal, SparkRel input) {
       if (parent != null) {
         assert input == parent.getInputs().get(ordinal);
       }
       return input.implementSpark(this);
     }
 
-    public JavaTypeFactory getTypeFactory() {
+    @Override public JavaTypeFactory getTypeFactory() {
       return implementor.getTypeFactory();
     }
 
-    public SqlConformance getConformance() {
+    @Override public SqlConformance getConformance() {
       return implementor.getConformance();
     }
   }
 }
-
-// End SparkToEnumerableConverter.java

@@ -17,8 +17,10 @@
 package org.apache.calcite.sql;
 
 import org.apache.calcite.linq4j.Ord;
+import org.apache.calcite.plan.Strong;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
+import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlOperandTypeInference;
@@ -35,10 +37,12 @@ import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Util;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 import static org.apache.calcite.util.Static.RESOURCE;
 
@@ -102,19 +106,13 @@ public abstract class SqlOperator {
    */
   private final int rightPrec;
 
-  /**
-   * used to infer the return type of a call to this operator
-   */
+  /** Used to infer the return type of a call to this operator. */
   private final SqlReturnTypeInference returnTypeInference;
 
-  /**
-   * used to infer types of unknown operands
-   */
+  /** Used to infer types of unknown operands. */
   private final SqlOperandTypeInference operandTypeInference;
 
-  /**
-   * used to validate operand types
-   */
+  /** Used to validate operand types. */
   private final SqlOperandTypeChecker operandTypeChecker;
 
   //~ Constructors -----------------------------------------------------------
@@ -216,7 +214,7 @@ public abstract class SqlOperator {
     return kind;
   }
 
-  public String toString() {
+  @Override public String toString() {
     return name;
   }
 
@@ -234,14 +232,14 @@ public abstract class SqlOperator {
   public abstract SqlSyntax getSyntax();
 
   /**
-   * Creates a call to this operand with an array of operands.
+   * Creates a call to this operator with an array of operands.
    *
-   * <p>The position of the resulting call is the union of the <code>
-   * pos</code> and the positions of all of the operands.
+   * <p>The position of the resulting call is the union of the {@code pos}
+   * and the positions of all of the operands.
    *
-   * @param functionQualifier function qualifier (e.g. "DISTINCT"), may be
-   * @param pos               parser position of the identifier of the call
-   * @param operands          array of operands
+   * @param functionQualifier Function qualifier (e.g. "DISTINCT"), or null
+   * @param pos               Parser position of the identifier of the call
+   * @param operands          Array of operands
    */
   public SqlCall createCall(
       SqlLiteral functionQualifier,
@@ -252,7 +250,25 @@ public abstract class SqlOperator {
   }
 
   /**
-   * Creates a call to this operand with an array of operands.
+   * Creates a call to this operator with a list of operands.
+   *
+   * <p>The position of the resulting call is the union of the {@code pos}
+   * and the positions of all of the operands.
+   *
+   * @param functionQualifier Function qualifier (e.g. "DISTINCT"), or null
+   * @param pos               Parser position of the identifier of the call
+   * @param operands          List of operands
+   */
+  public final SqlCall createCall(
+      SqlLiteral functionQualifier,
+      SqlParserPos pos,
+      Iterable<? extends SqlNode> operands) {
+    return createCall(functionQualifier, pos,
+        Iterables.toArray(operands, SqlNode.class));
+  }
+
+  /**
+   * Creates a call to this operator with an array of operands.
    *
    * <p>The position of the resulting call is the union of the <code>
    * pos</code> and the positions of all of the operands.
@@ -268,10 +284,10 @@ public abstract class SqlOperator {
   }
 
   /**
-   * Creates a call to this operand with a list of operands contained in a
+   * Creates a call to this operator with a list of operands contained in a
    * {@link SqlNodeList}.
    *
-   * <p>The position of the resulting call inferred from the SqlNodeList.
+   * <p>The position of the resulting call is inferred from the SqlNodeList.
    *
    * @param nodeList List of arguments
    * @return call to this operator
@@ -285,10 +301,10 @@ public abstract class SqlOperator {
   }
 
   /**
-   * Creates a call to this operand with a list of operands.
+   * Creates a call to this operator with a list of operands.
    *
-   * <p>The position of the resulting call is the union of the <code>
-   * pos</code> and the positions of all of the operands.
+   * <p>The position of the resulting call is the union of the {@code pos}
+   * and the positions of all of the operands.
    */
   public final SqlCall createCall(
       SqlParserPos pos,
@@ -332,29 +348,44 @@ public abstract class SqlOperator {
     getSyntax().unparse(writer, this, call, leftPrec, rightPrec);
   }
 
-  // REVIEW jvs 9-June-2006: See http://issues.eigenbase.org/browse/FRG-149
-  // for why this method exists.
+  @Deprecated // to be removed before 2.0
   protected void unparseListClause(SqlWriter writer, SqlNode clause) {
-    unparseListClause(writer, clause, null);
+    final SqlNodeList nodeList =
+        clause instanceof SqlNodeList
+            ? (SqlNodeList) clause
+            : SqlNodeList.of(clause);
+    writer.list(SqlWriter.FrameTypeEnum.SIMPLE, SqlWriter.COMMA, nodeList);
   }
 
+  @Deprecated // to be removed before 2.0
   protected void unparseListClause(
       SqlWriter writer,
       SqlNode clause,
       SqlKind sepKind) {
-    if (clause instanceof SqlNodeList) {
-      if (sepKind != null) {
-        ((SqlNodeList) clause).andOrList(writer, sepKind);
-      } else {
-        ((SqlNodeList) clause).commaList(writer);
-      }
+    final SqlNodeList nodeList =
+        clause instanceof SqlNodeList
+            ? (SqlNodeList) clause
+            : SqlNodeList.of(clause);
+    final SqlBinaryOperator sepOp;
+    if (sepKind == null) {
+      sepOp = SqlWriter.COMMA;
     } else {
-      clause.unparse(writer, 0, 0);
+      switch (sepKind) {
+      case AND:
+        sepOp = SqlStdOperatorTable.AND;
+        break;
+      case OR:
+        sepOp = SqlStdOperatorTable.OR;
+        break;
+      default:
+        throw new AssertionError();
+      }
     }
+    writer.list(SqlWriter.FrameTypeEnum.SIMPLE, sepOp, nodeList);
   }
 
   // override Object
-  public boolean equals(Object obj) {
+  @Override public boolean equals(Object obj) {
     if (!(obj instanceof SqlOperator)) {
       return false;
     }
@@ -507,10 +538,13 @@ public abstract class SqlOperator {
     final List<RelDataType> argTypes = constructArgTypeList(validator, scope,
         call, args, false);
 
+    // Always disable type coercion for builtin operator operands,
+    // they are handled by the TypeCoercion specifically.
     final SqlOperator sqlOperator =
-        SqlUtil.lookupRoutine(validator.getOperatorTable(), getNameAsId(),
+        SqlUtil.lookupRoutine(validator.getOperatorTable(),
+            validator.getTypeFactory(), getNameAsId(),
             argTypes, null, null, getSyntax(), getKind(),
-            validator.getCatalogReader().nameMatcher());
+            validator.getCatalogReader().nameMatcher(), false);
 
     ((SqlBasicCall) call).setOperator(sqlOperator);
     RelDataType type = call.getOperator().validateOperands(validator, scope, call);
@@ -656,9 +690,7 @@ public abstract class SqlOperator {
         if (operand.e != null
             && operand.e.getKind() == SqlKind.DEFAULT
             && !operandTypeChecker.isOptional(operand.i)) {
-          throw callBinding.getValidator().newValidationError(
-              callBinding.getCall(),
-              RESOURCE.defaultForOptionalParameter());
+          throw callBinding.newValidationError(RESOURCE.defaultForOptionalParameter());
         }
       }
     }
@@ -867,12 +899,21 @@ public abstract class SqlOperator {
     }
   }
 
-  /**
-   * @return the return type inference strategy for this operator, or null if
-   * return type inference is implemented by a subclass override
-   */
+  /** Returns the return type inference strategy for this operator, or null if
+   * return type inference is implemented by a subclass override. */
   public SqlReturnTypeInference getReturnTypeInference() {
     return returnTypeInference;
+  }
+
+  /**
+   * Returns the {@link Strong.Policy} strategy for this operator, or null if
+   * there is no particular strategy, in which case this policy will be deducted
+   * from the operator's {@link SqlKind}.
+   *
+   * @see Strong
+   */
+  public Supplier<Strong.Policy> getStrongPolicyInference() {
+    return null;
   }
 
   /**
@@ -906,16 +947,27 @@ public abstract class SqlOperator {
   }
 
   /**
-   * @return true iff a call to this operator is guaranteed to always return
-   * the same result given the same operands; true is assumed by default
+   * Returns whether a call to this operator is guaranteed to always return
+   * the same result given the same operands; true is assumed by default.
    */
   public boolean isDeterministic() {
     return true;
   }
 
   /**
-   * @return true iff it is unsafe to cache query plans referencing this
-   * operator; false is assumed by default
+   * Returns whether a call to this operator is not sensitive to the operands input order.
+   * An operator is symmetrical if the call returns the same result when
+   * the operands are shuffled.
+   *
+   * <p>By default, returns true for {@link SqlKind#SYMMETRICAL}.
+   */
+  public boolean isSymmetrical() {
+    return SqlKind.SYMMETRICAL.contains(kind);
+  }
+
+  /**
+   * Returns whether it is unsafe to cache query plans referencing this
+   * operator; false is assumed by default.
    */
   public boolean isDynamicFunction() {
     return false;
@@ -944,5 +996,3 @@ public abstract class SqlOperator {
     return true;
   }
 }
-
-// End SqlOperator.java

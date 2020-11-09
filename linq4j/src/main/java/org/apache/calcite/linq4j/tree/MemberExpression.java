@@ -48,11 +48,11 @@ public class MemberExpression extends Expression {
     return shuttle.visit(this, expression1);
   }
 
-  public <R> R accept(Visitor<R> visitor) {
+  @Override public <R> R accept(Visitor<R> visitor) {
     return visitor.visit(this);
   }
 
-  public Object evaluate(Evaluator evaluator) {
+  @Override public Object evaluate(Evaluator evaluator) {
     final Object o = expression == null
         ? null
         : expression.evaluate(evaluator);
@@ -104,5 +104,3 @@ public class MemberExpression extends Expression {
     return Objects.hash(nodeType, type, expression, field);
   }
 }
-
-// End MemberExpression.java

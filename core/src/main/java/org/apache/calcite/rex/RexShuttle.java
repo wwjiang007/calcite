@@ -17,7 +17,6 @@
 package org.apache.calcite.rex;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,7 +33,7 @@ import java.util.List;
 public class RexShuttle implements RexVisitor<RexNode> {
   //~ Methods ----------------------------------------------------------------
 
-  public RexNode visitOver(RexOver over) {
+  @Override public RexNode visitOver(RexOver over) {
     boolean[] update = {false};
     List<RexNode> clonedOperands = visitList(over.operands, update);
     RexWindow window = visitWindow(over.getWindow());
@@ -62,23 +61,33 @@ public class RexShuttle implements RexVisitor<RexNode> {
         visitFieldCollations(window.orderKeys, update);
     List<RexNode> clonedPartitionKeys =
         visitList(window.partitionKeys, update);
-    RexWindowBound lowerBound = window.getLowerBound().accept(this);
-    RexWindowBound upperBound = window.getUpperBound().accept(this);
-    if (update[0]
-        || (lowerBound != window.getLowerBound() && lowerBound != null)
-        || (upperBound != window.getUpperBound() && upperBound != null)) {
-      return new RexWindow(
-          clonedPartitionKeys,
-          clonedOrderKeys,
-          lowerBound,
-          upperBound,
-          window.isRows());
-    } else {
+    final RexWindowBound lowerBound = window.getLowerBound().accept(this);
+    final RexWindowBound upperBound = window.getUpperBound().accept(this);
+    if (lowerBound == null
+        || upperBound == null
+        || !update[0]
+        && lowerBound == window.getLowerBound()
+        && upperBound == window.getUpperBound()) {
       return window;
     }
+    boolean rows = window.isRows();
+    if (lowerBound.isUnbounded() && lowerBound.isPreceding()
+        && upperBound.isUnbounded() && upperBound.isFollowing()) {
+      // RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+      //   is equivalent to
+      // ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+      //   but we prefer "RANGE"
+      rows = false;
+    }
+    return new RexWindow(
+        clonedPartitionKeys,
+        clonedOrderKeys,
+        lowerBound,
+        upperBound,
+        rows);
   }
 
-  public RexNode visitSubQuery(RexSubQuery subQuery) {
+  @Override public RexNode visitSubQuery(RexSubQuery subQuery) {
     boolean[] update = {false};
     List<RexNode> clonedOperands = visitList(subQuery.operands, update);
     if (update[0]) {
@@ -96,7 +105,7 @@ public class RexShuttle implements RexVisitor<RexNode> {
     return fieldRef;
   }
 
-  public RexNode visitCall(final RexCall call) {
+  @Override public RexNode visitCall(final RexCall call) {
     boolean[] update = {false};
     List<RexNode> clonedOperands = visitList(call.operands, update);
     if (update[0]) {
@@ -156,16 +165,6 @@ public class RexShuttle implements RexVisitor<RexNode> {
   }
 
   /**
-   * Visits a list and writes the results to another list.
-   */
-  public void visitList(
-      List<? extends RexNode> exprs, List<RexNode> outExprs) {
-    for (RexNode expr : exprs) {
-      outExprs.add(expr.accept(this));
-    }
-  }
-
-  /**
    * Visits each of a list of field collations and returns a list of the
    * results.
    *
@@ -190,11 +189,11 @@ public class RexShuttle implements RexVisitor<RexNode> {
     return clonedOperands.build();
   }
 
-  public RexNode visitCorrelVariable(RexCorrelVariable variable) {
+  @Override public RexNode visitCorrelVariable(RexCorrelVariable variable) {
     return variable;
   }
 
-  public RexNode visitFieldAccess(RexFieldAccess fieldAccess) {
+  @Override public RexNode visitFieldAccess(RexFieldAccess fieldAccess) {
     RexNode before = fieldAccess.getReferenceExpr();
     RexNode after = before.accept(this);
 
@@ -207,23 +206,23 @@ public class RexShuttle implements RexVisitor<RexNode> {
     }
   }
 
-  public RexNode visitInputRef(RexInputRef inputRef) {
+  @Override public RexNode visitInputRef(RexInputRef inputRef) {
     return inputRef;
   }
 
-  public RexNode visitLocalRef(RexLocalRef localRef) {
+  @Override public RexNode visitLocalRef(RexLocalRef localRef) {
     return localRef;
   }
 
-  public RexNode visitLiteral(RexLiteral literal) {
+  @Override public RexNode visitLiteral(RexLiteral literal) {
     return literal;
   }
 
-  public RexNode visitDynamicParam(RexDynamicParam dynamicParam) {
+  @Override public RexNode visitDynamicParam(RexDynamicParam dynamicParam) {
     return dynamicParam;
   }
 
-  public RexNode visitRangeRef(RexRangeRef rangeRef) {
+  @Override public RexNode visitRangeRef(RexRangeRef rangeRef) {
     return rangeRef;
   }
 
@@ -262,14 +261,6 @@ public class RexShuttle implements RexVisitor<RexNode> {
   }
 
   /**
-   * Applies this shuttle to each expression in an iterable.
-   */
-  public final Iterable<RexNode> apply(Iterable<? extends RexNode> iterable) {
-    return Iterables.transform(iterable,
-        t -> t == null ? null : t.accept(RexShuttle.this));
-  }
-
-  /**
    * Applies this shuttle to an expression, or returns null if the expression
    * is null.
    */
@@ -277,5 +268,3 @@ public class RexShuttle implements RexVisitor<RexNode> {
     return (expr == null) ? null : expr.accept(this);
   }
 }
-
-// End RexShuttle.java

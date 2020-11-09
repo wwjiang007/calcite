@@ -24,13 +24,14 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlWriter;
+import org.apache.calcite.sql.Symbolizable;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
 import org.apache.calcite.sql.type.SameOperandTypeChecker;
+import org.apache.calcite.sql.type.SqlReturnTypeInference;
 import org.apache.calcite.sql.type.SqlSingleOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlTypeFamily;
-import org.apache.calcite.sql.type.SqlTypeTransformCascade;
 import org.apache.calcite.sql.type.SqlTypeTransforms;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 
@@ -45,8 +46,8 @@ import java.util.List;
 public class SqlTrimFunction extends SqlFunction {
   protected static final SqlTrimFunction INSTANCE =
       new SqlTrimFunction("TRIM", SqlKind.TRIM,
-          ReturnTypes.cascade(ReturnTypes.ARG2, SqlTypeTransforms.TO_NULLABLE,
-              SqlTypeTransforms.TO_VARYING),
+          ReturnTypes.ARG2.andThen(SqlTypeTransforms.TO_NULLABLE)
+              .andThen(SqlTypeTransforms.TO_VARYING),
           OperandTypes.and(
               OperandTypes.family(SqlTypeFamily.ANY, SqlTypeFamily.STRING,
                   SqlTypeFamily.STRING),
@@ -63,7 +64,7 @@ public class SqlTrimFunction extends SqlFunction {
   /**
    * Defines the enumerated values "LEADING", "TRAILING", "BOTH".
    */
-  public enum Flag {
+  public enum Flag implements Symbolizable {
     BOTH(1, 1), LEADING(1, 0), TRAILING(0, 1);
 
     private final int left;
@@ -81,20 +82,12 @@ public class SqlTrimFunction extends SqlFunction {
     public int getRight() {
       return right;
     }
-
-    /**
-     * Creates a parse-tree node representing an occurrence of this flag
-     * at a particular position in the parsed text.
-     */
-    public SqlLiteral symbol(SqlParserPos pos) {
-      return SqlLiteral.createSymbol(this, pos);
-    }
   }
 
   //~ Constructors -----------------------------------------------------------
 
   public SqlTrimFunction(String name, SqlKind kind,
-      SqlTypeTransformCascade returnTypeInference,
+      SqlReturnTypeInference returnTypeInference,
       SqlSingleOperandTypeChecker operandTypeChecker) {
     super(name, kind, returnTypeInference, null, operandTypeChecker,
         SqlFunctionCategory.STRING);
@@ -102,7 +95,7 @@ public class SqlTrimFunction extends SqlFunction {
 
   //~ Methods ----------------------------------------------------------------
 
-  public void unparse(
+  @Override public void unparse(
       SqlWriter writer,
       SqlCall call,
       int leftPrec,
@@ -116,7 +109,7 @@ public class SqlTrimFunction extends SqlFunction {
     writer.endFunCall(frame);
   }
 
-  public String getSignatureTemplate(final int operandsCount) {
+  @Override public String getSignatureTemplate(final int operandsCount) {
     switch (operandsCount) {
     case 3:
       return "{0}([BOTH|LEADING|TRAILING] {1} FROM {2})";
@@ -125,7 +118,7 @@ public class SqlTrimFunction extends SqlFunction {
     }
   }
 
-  public SqlCall createCall(
+  @Override public SqlCall createCall(
       SqlLiteral functionQualifier,
       SqlParserPos pos,
       SqlNode... operands) {
@@ -154,7 +147,7 @@ public class SqlTrimFunction extends SqlFunction {
     return super.createCall(functionQualifier, pos, operands);
   }
 
-  public boolean checkOperandTypes(
+  @Override public boolean checkOperandTypes(
       SqlCallBinding callBinding,
       boolean throwOnFailure) {
     if (!super.checkOperandTypes(callBinding, throwOnFailure)) {
@@ -170,5 +163,3 @@ public class SqlTrimFunction extends SqlFunction {
     }
   }
 }
-
-// End SqlTrimFunction.java

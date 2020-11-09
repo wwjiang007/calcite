@@ -20,7 +20,8 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Type;
 
 /**
- * Represents a PseudoField that is implemented via java reflection Field
+ * Represents a PseudoField that is implemented via a Java reflection
+ * {@link Field}.
  */
 public class ReflectedPseudoField implements PseudoField {
   private final Field field;
@@ -30,23 +31,23 @@ public class ReflectedPseudoField implements PseudoField {
     this.field = field;
   }
 
-  public String getName() {
+  @Override public String getName() {
     return field.getName();
   }
 
-  public Type getType() {
+  @Override public Type getType() {
     return field.getType();
   }
 
-  public int getModifiers() {
+  @Override public int getModifiers() {
     return field.getModifiers();
   }
 
-  public Object get(Object o) throws IllegalAccessException {
+  @Override public Object get(Object o) throws IllegalAccessException {
     return field.get(o);
   }
 
-  public Class<?> getDeclaringClass() {
+  @Override public Class<?> getDeclaringClass() {
     return field.getDeclaringClass();
   }
 
@@ -71,5 +72,3 @@ public class ReflectedPseudoField implements PseudoField {
     return field.hashCode();
   }
 }
-
-// End ReflectedPseudoField.java

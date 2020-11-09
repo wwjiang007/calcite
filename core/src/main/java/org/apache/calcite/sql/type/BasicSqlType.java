@@ -171,26 +171,13 @@ public class BasicSqlType extends AbstractSqlType {
   }
 
   // implement RelDataTypeImpl
-  protected void generateTypeString(StringBuilder sb, boolean withDetail) {
+  @Override protected void generateTypeString(StringBuilder sb, boolean withDetail) {
     // Called to make the digest, which equals() compares;
     // so equivalent data types must produce identical type strings.
 
     sb.append(typeName.name());
     boolean printPrecision = precision != PRECISION_NOT_SPECIFIED;
     boolean printScale = scale != SCALE_NOT_SPECIFIED;
-
-    // for the digest, print the precision when defaulted,
-    // since (for instance) TIME is equivalent to TIME(0).
-    if (withDetail) {
-      // -1 means there is no default value for precision
-      if (typeName.allowsPrec()
-          && typeSystem.getDefaultPrecision(typeName) > -1) {
-        printPrecision = true;
-      }
-      if (typeName.getDefaultScale() > -1) {
-        printScale = true;
-      }
-    }
 
     if (printPrecision) {
       sb.append('(');
@@ -302,5 +289,3 @@ public class BasicSqlType extends AbstractSqlType {
         scale);
   }
 }
-
-// End BasicSqlType.java

@@ -16,11 +16,15 @@
  */
 package org.apache.calcite.plan.volcano;
 
+import org.apache.calcite.plan.RelHintsPropagator;
 import org.apache.calcite.plan.RelOptListener;
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.plan.RelOptRuleOperand;
 import org.apache.calcite.plan.RelOptRuleOperandChildPolicy;
+import org.apache.calcite.rel.PhysicalNode;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.rules.SubstitutionRule;
+import org.apache.calcite.rel.rules.TransformationRule;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -33,6 +37,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * <code>VolcanoRuleCall</code> implements the {@link RelOptRuleCall} interface
@@ -86,8 +91,15 @@ public class VolcanoRuleCall extends RelOptRuleCall {
 
   //~ Methods ----------------------------------------------------------------
 
-  // implement RelOptRuleCall
-  public void transformTo(RelNode rel, Map<RelNode, RelNode> equiv) {
+  @Override public void transformTo(RelNode rel, Map<RelNode, RelNode> equiv,
+      RelHintsPropagator handler) {
+    if (rel instanceof PhysicalNode
+        && rule instanceof TransformationRule) {
+      throw new RuntimeException(
+          rel + " is a PhysicalNode, which is not allowed in " + rule);
+    }
+
+    rel = handler.propagate(rels[0], rel);
     if (LOGGER.isDebugEnabled()) {
       LOGGER.debug("Transform to: rel#{} via {}{}", rel.getId(), getRule(),
           equiv.isEmpty() ? "" : " with equivalences " + equiv);
@@ -109,14 +121,19 @@ public class VolcanoRuleCall extends RelOptRuleCall {
             id, getRule(), Arrays.toString(rels), relDesc);
       }
 
-      if (volcanoPlanner.listener != null) {
+      if (volcanoPlanner.getListener() != null) {
         RelOptListener.RuleProductionEvent event =
             new RelOptListener.RuleProductionEvent(
                 volcanoPlanner,
                 rel,
                 this,
                 true);
-        volcanoPlanner.listener.ruleProductionSucceeded(event);
+        volcanoPlanner.getListener().ruleProductionSucceeded(event);
+      }
+
+      if (this.getRule() instanceof SubstitutionRule
+          && ((SubstitutionRule) getRule()).autoPruneOld()) {
+        volcanoPlanner.prune(rels[0]);
       }
 
       // Registering the root relational expression implicitly registers
@@ -124,19 +141,20 @@ public class VolcanoRuleCall extends RelOptRuleCall {
       // don't register twice and cause churn.
       for (Map.Entry<RelNode, RelNode> entry : equiv.entrySet()) {
         volcanoPlanner.ensureRegistered(
-            entry.getKey(), entry.getValue(), this);
+            entry.getKey(), entry.getValue());
       }
-      volcanoPlanner.ensureRegistered(rel, rels[0], this);
-      rels[0].getCluster().invalidateMetadataQuery();
+      // The subset is not used, but we need it, just for debugging
+      @SuppressWarnings("unused")
+      RelSubset subset = volcanoPlanner.ensureRegistered(rel, rels[0]);
 
-      if (volcanoPlanner.listener != null) {
+      if (volcanoPlanner.getListener() != null) {
         RelOptListener.RuleProductionEvent event =
             new RelOptListener.RuleProductionEvent(
                 volcanoPlanner,
                 rel,
                 this,
                 false);
-        volcanoPlanner.listener.ruleProductionSucceeded(event);
+        volcanoPlanner.getListener().ruleProductionSucceeded(event);
       }
     } catch (Exception e) {
       throw new RuntimeException("Error occurred while applying rule "
@@ -153,6 +171,11 @@ public class VolcanoRuleCall extends RelOptRuleCall {
     try {
       if (volcanoPlanner.isRuleExcluded(getRule())) {
         LOGGER.debug("Rule [{}] not fired due to exclusion filter", getRule());
+        return;
+      }
+
+      if (isRuleExcluded()) {
+        LOGGER.debug("Rule [{}] not fired due to exclusion hint", getRule());
         return;
       }
 
@@ -174,9 +197,7 @@ public class VolcanoRuleCall extends RelOptRuleCall {
           return;
         }
 
-        final Double importance =
-            volcanoPlanner.relImportances.get(rel);
-        if ((importance != null) && (importance == 0d)) {
+        if (volcanoPlanner.prunedNodes.contains(rel)) {
           LOGGER.debug("Rule [{}] not fired because operand #{} ({}) has importance=0",
               getRule(), i, rel);
           return;
@@ -189,14 +210,14 @@ public class VolcanoRuleCall extends RelOptRuleCall {
             id, getRule(), Arrays.toString(rels));
       }
 
-      if (volcanoPlanner.listener != null) {
+      if (volcanoPlanner.getListener() != null) {
         RelOptListener.RuleAttemptedEvent event =
             new RelOptListener.RuleAttemptedEvent(
                 volcanoPlanner,
                 rels[0],
                 this,
                 true);
-        volcanoPlanner.listener.ruleAttempted(event);
+        volcanoPlanner.getListener().ruleAttempted(event);
       }
 
       if (LOGGER.isDebugEnabled()) {
@@ -221,14 +242,14 @@ public class VolcanoRuleCall extends RelOptRuleCall {
         this.generatedRelList = null;
       }
 
-      if (volcanoPlanner.listener != null) {
+      if (volcanoPlanner.getListener() != null) {
         RelOptListener.RuleAttemptedEvent event =
             new RelOptListener.RuleAttemptedEvent(
                 volcanoPlanner,
                 rels[0],
                 this,
                 false);
-        volcanoPlanner.listener.ruleAttempted(event);
+        volcanoPlanner.getListener().ruleAttempted(event);
       }
     } catch (Exception e) {
       throw new RuntimeException("Error while applying rule " + getRule()
@@ -276,19 +297,27 @@ public class VolcanoRuleCall extends RelOptRuleCall {
       final Collection<? extends RelNode> successors;
       if (ascending) {
         assert previousOperand.getParent() == operand;
+        assert operand.getMatchedClass() != RelSubset.class;
+        if (previousOperand.getMatchedClass() != RelSubset.class
+            && previous instanceof RelSubset) {
+          throw new RuntimeException("RelSubset should not match with "
+              + previousOperand.getMatchedClass().getSimpleName());
+        }
         parentOperand = operand;
         final RelSubset subset = volcanoPlanner.getSubset(previous);
         successors = subset.getParentRels();
       } else {
-        parentOperand = previousOperand;
-        final int parentOrdinal = operand.getParent().ordinalInRule;
-        final RelNode parentRel = rels[parentOrdinal];
+        parentOperand = operand.getParent();
+        final RelNode parentRel = rels[parentOperand.ordinalInRule];
         final List<RelNode> inputs = parentRel.getInputs();
         // if the child is unordered, then add all rels in all input subsets to the successors list
         // because unordered can match child in any ordinal
         if (parentOperand.childPolicy == RelOptRuleOperandChildPolicy.UNORDERED) {
           if (operand.getMatchedClass() == RelSubset.class) {
-            successors = inputs;
+            // Find all the sibling subsets that satisfy this subset's traitSet
+            successors = inputs.stream()
+              .flatMap(subset -> ((RelSubset) subset).getSubsetsSatisfyingThis())
+              .collect(Collectors.toList());
           } else {
             List<RelNode> allRelsInAllSubsets = new ArrayList<>();
             Set<RelNode> duplicates = new HashSet<>();
@@ -314,8 +343,9 @@ public class VolcanoRuleCall extends RelOptRuleCall {
           final RelSubset subset =
               (RelSubset) inputs.get(operand.ordinalInParent);
           if (operand.getMatchedClass() == RelSubset.class) {
-            // If the rule wants the whole subset, we just provide it
-            successors = ImmutableList.of(subset);
+            // Find all the sibling subsets that satisfy this subset'straitSet
+            successors =
+              subset.getSubsetsSatisfyingThis().collect(Collectors.toList());
           } else {
             successors = subset.getRelList();
           }
@@ -327,17 +357,31 @@ public class VolcanoRuleCall extends RelOptRuleCall {
       }
 
       for (RelNode rel : successors) {
+        if (operand.getRule() instanceof TransformationRule
+            && rel.getConvention() != previous.getConvention()) {
+          continue;
+        }
         if (!operand.matches(rel)) {
           continue;
         }
         if (ascending && operand.childPolicy != RelOptRuleOperandChildPolicy.UNORDERED) {
           // We know that the previous operand was *a* child of its parent,
           // but now check that it is the *correct* child.
+          if (previousOperand.ordinalInParent >= rel.getInputs().size()) {
+            continue;
+          }
           final RelSubset input =
               (RelSubset) rel.getInput(previousOperand.ordinalInParent);
-          List<RelNode> inputRels = input.set.getRelsFromAllSubsets();
-          if (!inputRels.contains(previous)) {
-            continue;
+          if (previousOperand.getMatchedClass() == RelSubset.class) {
+            // The matched subset (previous) should satisfy our input subset (input)
+            if (input.getSubsetsSatisfyingThis().noneMatch(previous::equals)) {
+              continue;
+            }
+          } else {
+            List<RelNode> inputRels = input.getRelList();
+            if (!inputRels.contains(previous)) {
+              continue;
+            }
           }
         }
 
@@ -361,6 +405,9 @@ public class VolcanoRuleCall extends RelOptRuleCall {
             inputs.set(operand.ordinalInParent, rel);
             setChildRels(previous, inputs);
           }
+          break;
+        default:
+          break;
         }
 
         rels[operandOrdinal] = rel;
@@ -369,5 +416,3 @@ public class VolcanoRuleCall extends RelOptRuleCall {
     }
   }
 }
-
-// End VolcanoRuleCall.java

@@ -63,11 +63,11 @@ public class ViewTableMacro implements TableMacro {
         schemaPath == null ? null : ImmutableList.copyOf(schemaPath);
   }
 
-  public List<FunctionParameter> getParameters() {
+  @Override public List<FunctionParameter> getParameters() {
     return Collections.emptyList();
   }
 
-  public TranslatableTable apply(List<Object> arguments) {
+  @Override public TranslatableTable apply(List<Object> arguments) {
     final CalciteConnection connection =
         MaterializedViewTable.MATERIALIZATION_CONNECTION;
     CalcitePrepare.AnalyzeViewResult parsed =
@@ -107,5 +107,3 @@ public class ViewTableMacro implements TableMacro {
         RelDataTypeImpl.proto(parsed.rowType), viewSql, schemaPath, viewPath);
   }
 }
-
-// End ViewTableMacro.java

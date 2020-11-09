@@ -19,6 +19,7 @@ package org.apache.calcite.sql;
 import org.apache.calcite.linq4j.Ord;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexWindowBound;
+import org.apache.calcite.rex.RexWindowBounds;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.ReturnTypes;
 import org.apache.calcite.sql.type.SqlTypeFamily;
@@ -139,7 +140,7 @@ public class SqlWindow extends SqlCall {
 
   //~ Methods ----------------------------------------------------------------
 
-  public SqlOperator getOperator() {
+  @Override public SqlOperator getOperator() {
     return SqlWindowOperator.INSTANCE;
   }
 
@@ -147,7 +148,7 @@ public class SqlWindow extends SqlCall {
     return SqlKind.WINDOW;
   }
 
-  public List<SqlNode> getOperandList() {
+  @Override public List<SqlNode> getOperandList() {
     return ImmutableNullableList.of(declName, refName, partitionList, orderList,
         isRows, lowerBound, upperBound, allowPartial);
   }
@@ -227,25 +228,32 @@ public class SqlWindow extends SqlCall {
    *
    * @see org.apache.calcite.rel.core.Window.Group#isAlwaysNonEmpty()
    * @see SqlOperatorBinding#getGroupCount()
-   * @see org.apache.calcite.sql.validate.SqlValidatorImpl#resolveWindow(SqlNode, org.apache.calcite.sql.validate.SqlValidatorScope, boolean)
+   * @see org.apache.calcite.sql.validate.SqlValidatorImpl#resolveWindow(SqlNode, SqlValidatorScope)
    */
   public boolean isAlwaysNonEmpty() {
-    final SqlWindow tmp;
-    if (lowerBound == null || upperBound == null) {
-      // Keep the current window unmodified
-      tmp = new SqlWindow(getParserPosition(), null, null, partitionList,
-          orderList, isRows, lowerBound, upperBound, allowPartial);
-      tmp.populateBounds();
+    final RexWindowBound lower;
+    final RexWindowBound upper;
+    if (lowerBound == null) {
+      if (upperBound == null) {
+        lower = RexWindowBounds.UNBOUNDED_PRECEDING;
+      } else {
+        lower = RexWindowBounds.CURRENT_ROW;
+      }
+    } else if (lowerBound instanceof SqlLiteral) {
+      lower = RexWindowBounds.create(lowerBound, null);
     } else {
-      tmp = this;
+      return false;
     }
-    if (tmp.lowerBound instanceof SqlLiteral
-        && tmp.upperBound instanceof SqlLiteral) {
-      int lowerKey = RexWindowBound.create(tmp.lowerBound, null).getOrderKey();
-      int upperKey = RexWindowBound.create(tmp.upperBound, null).getOrderKey();
-      return lowerKey > -1 && lowerKey <= upperKey;
+    if (upperBound == null) {
+      upper = RexWindowBounds.CURRENT_ROW;
+    } else if (upperBound instanceof SqlLiteral) {
+      upper = RexWindowBounds.create(upperBound, null);
+    } else {
+      return false;
     }
-    return false;
+    final int lowerKey = lower.getOrderKey();
+    final int upperKey = upper.getOrderKey();
+    return lowerKey > -1 && lowerKey <= upperKey;
   }
 
   public void setRows(SqlLiteral isRows) {
@@ -286,6 +294,7 @@ public class SqlWindow extends SqlCall {
     return windowCall;
   }
 
+  // CHECKSTYLE: IGNORE 1
   /** @see Util#deprecated(Object, boolean) */
   static void checkSpecialLiterals(SqlWindow window, SqlValidator validator) {
     final SqlNode lowerBound = window.getLowerBound();
@@ -517,6 +526,7 @@ public class SqlWindow extends SqlCall {
       SqlValidatorScope scope) {
     SqlValidatorScope operandScope = scope; // REVIEW
 
+    @SuppressWarnings("unused")
     SqlIdentifier declName = this.declName;
     SqlIdentifier refName = this.refName;
     SqlNodeList partitionList = this.partitionList;
@@ -527,7 +537,7 @@ public class SqlWindow extends SqlCall {
     SqlLiteral allowPartial = this.allowPartial;
 
     if (refName != null) {
-      SqlWindow win = validator.resolveWindow(this, operandScope, false);
+      SqlWindow win = validator.resolveWindow(this, operandScope);
       partitionList = win.partitionList;
       orderList = win.orderList;
       isRows = win.isRows;
@@ -549,8 +559,8 @@ public class SqlWindow extends SqlCall {
 
     for (SqlNode orderItem : orderList) {
       boolean savedColumnReferenceExpansion =
-          validator.getColumnReferenceExpansion();
-      validator.setColumnReferenceExpansion(false);
+          validator.config().columnReferenceExpansion();
+      validator.transform(config -> config.withColumnReferenceExpansion(false));
       try {
         orderItem.accept(Util.OverFinder.INSTANCE);
       } catch (ControlFlowException e) {
@@ -561,8 +571,8 @@ public class SqlWindow extends SqlCall {
       try {
         orderItem.validateExpr(validator, scope);
       } finally {
-        validator.setColumnReferenceExpansion(
-            savedColumnReferenceExpansion);
+        validator.transform(config ->
+            config.withColumnReferenceExpansion(savedColumnReferenceExpansion));
       }
     }
 
@@ -666,7 +676,7 @@ public class SqlWindow extends SqlCall {
         if (boundVal instanceof SqlNumericLiteral) {
           final SqlNumericLiteral boundLiteral =
               (SqlNumericLiteral) boundVal;
-          if ((!boundLiteral.isExact())
+          if (!boundLiteral.isExact()
               || (boundLiteral.getScale() != 0)
               || (0 > boundLiteral.longValue(true))) {
             // true == throw if not exact (we just tested that - right?)
@@ -753,26 +763,16 @@ public class SqlWindow extends SqlCall {
         SqlParserPos.ZERO);
   }
 
-  /**
-   * Fill in missing bounds. Default bounds are "BETWEEN UNBOUNDED PRECEDING
-   * AND CURRENT ROW" when ORDER BY present and "BETWEEN UNBOUNDED PRECEDING
-   * AND UNBOUNDED FOLLOWING" when no ORDER BY present.
-   */
+  @Deprecated // to be removed before 2.0
   public void populateBounds() {
     if (lowerBound == null && upperBound == null) {
-      setLowerBound(
-          SqlWindow.createUnboundedPreceding(getParserPosition()));
+      setLowerBound(SqlWindow.createUnboundedPreceding(pos));
     }
     if (lowerBound == null) {
-      setLowerBound(
-          SqlWindow.createCurrentRow(getParserPosition()));
+      setLowerBound(SqlWindow.createCurrentRow(pos));
     }
     if (upperBound == null) {
-      SqlParserPos pos = orderList.getParserPosition();
-      setUpperBound(
-          orderList.size() == 0
-              ? SqlWindow.createUnboundedFollowing(pos)
-              : SqlWindow.createCurrentRow(pos));
+      setUpperBound(SqlWindow.createCurrentRow(pos));
     }
   }
 
@@ -780,7 +780,7 @@ public class SqlWindow extends SqlCall {
    * An enumeration of types of bounds in a window: <code>CURRENT ROW</code>,
    * <code>UNBOUNDED PRECEDING</code>, and <code>UNBOUNDED FOLLOWING</code>.
    */
-  enum Bound {
+  enum Bound implements Symbolizable {
     CURRENT_ROW("CURRENT ROW"),
     UNBOUNDED_PRECEDING("UNBOUNDED PRECEDING"),
     UNBOUNDED_FOLLOWING("UNBOUNDED FOLLOWING");
@@ -791,16 +791,8 @@ public class SqlWindow extends SqlCall {
       this.sql = sql;
     }
 
-    public String toString() {
+    @Override public String toString() {
       return sql;
-    }
-
-    /**
-     * Creates a parse-tree node representing an occurrence of this bound
-     * type at a particular position in the parsed text.
-     */
-    public SqlNode symbol(SqlParserPos pos) {
-      return SqlLiteral.createSymbol(this, pos);
     }
   }
 
@@ -812,11 +804,11 @@ public class SqlWindow extends SqlCall {
       super("WINDOW", SqlKind.WINDOW, 2, true, null, null, null);
     }
 
-    public SqlSyntax getSyntax() {
+    @Override public SqlSyntax getSyntax() {
       return SqlSyntax.SPECIAL;
     }
 
-    public SqlCall createCall(
+    @Override public SqlCall createCall(
         SqlLiteral functionQualifier,
         SqlParserPos pos,
         SqlNode... operands) {
@@ -834,7 +826,7 @@ public class SqlWindow extends SqlCall {
           pos);
     }
 
-    public <R> void acceptCall(
+    @Override public <R> void acceptCall(
         SqlVisitor<R> visitor,
         SqlCall call,
         boolean onlyExpressions,
@@ -858,7 +850,7 @@ public class SqlWindow extends SqlCall {
       }
     }
 
-    public void unparse(
+    @Override public void unparse(
         SqlWriter writer,
         SqlCall call,
         int leftPrec,
@@ -915,5 +907,3 @@ public class SqlWindow extends SqlCall {
     }
   }
 }
-
-// End SqlWindow.java

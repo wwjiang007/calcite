@@ -17,6 +17,7 @@
 package org.apache.calcite.schema;
 
 import org.apache.calcite.DataContext;
+import org.apache.calcite.adapter.enumerable.EnumUtils;
 import org.apache.calcite.adapter.java.JavaTypeFactory;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.config.CalciteConnectionConfigImpl;
@@ -30,7 +31,6 @@ import org.apache.calcite.linq4j.Queryable;
 import org.apache.calcite.linq4j.tree.Expression;
 import org.apache.calcite.linq4j.tree.Expressions;
 import org.apache.calcite.linq4j.tree.MethodCallExpression;
-import org.apache.calcite.linq4j.tree.Types;
 import org.apache.calcite.materialize.Lattice;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
@@ -39,6 +39,7 @@ import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.tools.RelRunner;
 import org.apache.calcite.util.BuiltInMethod;
 import org.apache.calcite.util.Pair;
+import org.apache.calcite.util.Util;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -176,7 +177,7 @@ public final class Schemas {
           Expressions.constant(elementType),
           Expressions.constant(tableName));
     }
-    return Types.castIfNecessary(clazz, expression);
+    return EnumUtils.convert(expression, clazz);
   }
 
   public static DataContext createDataContext(
@@ -224,7 +225,7 @@ public final class Schemas {
    * array. */
   public static Enumerable<Object[]> enumerable(final FilterableTable table,
       final DataContext root) {
-    return table.scan(root, ImmutableList.of());
+    return table.scan(root, new ArrayList<>());
   }
 
   /** Returns an {@link org.apache.calcite.linq4j.Enumerable} over the rows of
@@ -232,7 +233,7 @@ public final class Schemas {
    * representing each row as an object array. */
   public static Enumerable<Object[]> enumerable(
       final ProjectableFilterableTable table, final DataContext root) {
-    return table.scan(root, ImmutableList.of(),
+    return table.scan(root, new ArrayList<>(),
         identity(table.getRowType(root.getTypeFactory()).getFieldCount()));
   }
 
@@ -379,19 +380,19 @@ public final class Schemas {
     final ImmutableList<String> objectPath =
         objectPath_ == null ? null : ImmutableList.copyOf(objectPath_);
     return new CalcitePrepare.Context() {
-      public JavaTypeFactory getTypeFactory() {
+      @Override public JavaTypeFactory getTypeFactory() {
         return typeFactory;
       }
 
-      public CalciteSchema getRootSchema() {
+      @Override public CalciteSchema getRootSchema() {
         return schema.root();
       }
 
-      public CalciteSchema getMutableRootSchema() {
+      @Override public CalciteSchema getMutableRootSchema() {
         return getRootSchema();
       }
 
-      public List<String> getDefaultSchemaPath() {
+      @Override public List<String> getDefaultSchemaPath() {
         // schemaPath is usually null. If specified, it overrides schema
         // as the context within which the SQL is validated.
         if (schemaPath == null) {
@@ -400,23 +401,23 @@ public final class Schemas {
         return schemaPath;
       }
 
-      public List<String> getObjectPath() {
+      @Override public List<String> getObjectPath() {
         return objectPath;
       }
 
-      public CalciteConnectionConfig config() {
+      @Override public CalciteConnectionConfig config() {
         return connectionConfig;
       }
 
-      public DataContext getDataContext() {
+      @Override public DataContext getDataContext() {
         return dataContext;
       }
 
-      public RelRunner getRelRunner() {
+      @Override public RelRunner getRelRunner() {
         throw new UnsupportedOperationException();
       }
 
-      public CalcitePrepare.SparkHandler spark() {
+      @Override public CalcitePrepare.SparkHandler spark() {
         final boolean enable = config().spark();
         return CalcitePrepare.Dummy.getSparkHandler(enable);
       }
@@ -443,7 +444,7 @@ public final class Schemas {
   public static List<CalciteSchema.TableEntry> getStarTables(
       CalciteSchema schema) {
     final List<CalciteSchema.LatticeEntry> list = getLatticeEntries(schema);
-    return Lists.transform(list, entry -> {
+    return Util.transform(list, entry -> {
       final CalciteSchema.TableEntry starTable =
           Objects.requireNonNull(entry).getStarTable();
       assert starTable.getTable().getJdbcTableType()
@@ -457,7 +458,7 @@ public final class Schemas {
    * @param schema Schema */
   public static List<Lattice> getLattices(CalciteSchema schema) {
     final List<CalciteSchema.LatticeEntry> list = getLatticeEntries(schema);
-    return Lists.transform(list, CalciteSchema.LatticeEntry::getLattice);
+    return Util.transform(list, LatticeEntry::getLattice);
   }
 
   /** Returns the lattices defined in a schema.
@@ -515,6 +516,8 @@ public final class Schemas {
       return PathImpl.EMPTY;
     }
     if (!rootSchema.name.isEmpty()) {
+      // If path starts with the name of the root schema, ignore the first step
+      // in the path.
       Preconditions.checkState(rootSchema.name.equals(iterator.next()));
     }
     for (;;) {
@@ -552,19 +555,19 @@ public final class Schemas {
       this.map = ImmutableMap.of();
     }
 
-    public SchemaPlus getRootSchema() {
+    @Override public SchemaPlus getRootSchema() {
       return rootSchema;
     }
 
-    public JavaTypeFactory getTypeFactory() {
+    @Override public JavaTypeFactory getTypeFactory() {
       return connection.getTypeFactory();
     }
 
-    public QueryProvider getQueryProvider() {
+    @Override public QueryProvider getQueryProvider() {
       return connection;
     }
 
-    public Object get(String name) {
+    @Override public Object get(String name) {
       return map.get(name);
     }
   }
@@ -591,37 +594,35 @@ public final class Schemas {
       return pairs.hashCode();
     }
 
-    public Pair<String, Schema> get(int index) {
+    @Override public Pair<String, Schema> get(int index) {
       return pairs.get(index);
     }
 
-    public int size() {
+    @Override public int size() {
       return pairs.size();
     }
 
-    public Path parent() {
+    @Override public Path parent() {
       if (pairs.isEmpty()) {
         throw new IllegalArgumentException("at root");
       }
       return new PathImpl(pairs.subList(0, pairs.size() - 1));
     }
 
-    public List<String> names() {
+    @Override public List<String> names() {
       return new AbstractList<String>() {
-        public String get(int index) {
+        @Override public String get(int index) {
           return pairs.get(index + 1).left;
         }
 
-        public int size() {
+        @Override public int size() {
           return pairs.size() - 1;
         }
       };
     }
 
-    public List<Schema> schemas() {
+    @Override public List<Schema> schemas() {
       return Pair.right(pairs);
     }
   }
 }
-
-// End Schemas.java

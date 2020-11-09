@@ -18,6 +18,7 @@ package org.apache.calcite.util.trace;
 
 import org.apache.calcite.linq4j.function.Function2;
 import org.apache.calcite.linq4j.function.Functions;
+import org.apache.calcite.plan.AbstractRelOptPlanner;
 import org.apache.calcite.plan.RelImplementor;
 import org.apache.calcite.plan.RelOptPlanner;
 import org.apache.calcite.prepare.Prepare;
@@ -31,7 +32,7 @@ import java.io.File;
  * Contains all of the {@link org.slf4j.Logger tracers} used within
  * org.apache.calcite class libraries.
  *
- * <h3>Note to developers</h3>
+ * <h2>Note to developers</h2>
  *
  * <p>Please ensure that every tracer used in org.apache.calcite is added to
  * this class as a <em>public static final</em> member called <code>
@@ -79,6 +80,13 @@ public abstract class CalciteTrace {
   }
 
   /**
+   * Reports volcano planner optimization task events.
+   */
+  public static Logger getPlannerTaskTracer() {
+    return LoggerFactory.getLogger("org.apache.calcite.plan.volcano.task");
+  }
+
+  /**
    * The "org.apache.calcite.prepare.Prepare" tracer prints the generated
    * program at DEBUG (formerly, FINE)  or higher.
    */
@@ -118,6 +126,20 @@ public abstract class CalciteTrace {
     return LoggerFactory.getLogger("org.apache.calcite.sql2rel");
   }
 
+  public static Logger getRuleAttemptsTracer() {
+    return LoggerFactory.getLogger(
+        AbstractRelOptPlanner.class.getName() + ".rule_execution_summary"
+    );
+  }
+
+  /**
+   * The tracers report important/useful information related with the execution
+   * of unit tests.
+   */
+  public static Logger getTestTracer(Class<?> testClass) {
+    return LoggerFactory.getLogger(testClass.getName());
+  }
+
   /**
    * Thread-local handler that is called with dynamically generated Java code.
    * It exists for unit-testing.
@@ -127,5 +149,3 @@ public abstract class CalciteTrace {
     return DYNAMIC_HANDLER;
   }
 }
-
-// End CalciteTrace.java

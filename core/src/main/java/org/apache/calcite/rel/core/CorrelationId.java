@@ -22,7 +22,7 @@ import java.util.Set;
 
 /**
  * Describes the necessary parameters for an implementation in order to
- * identify and set dynamic variables
+ * identify and set dynamic variables.
  */
 public class CorrelationId implements Cloneable, Comparable<CorrelationId> {
   /**
@@ -81,11 +81,11 @@ public class CorrelationId implements Cloneable, Comparable<CorrelationId> {
     return name;
   }
 
-  public String toString() {
+  @Override public String toString() {
     return name;
   }
 
-  public int compareTo(CorrelationId other) {
+  @Override public int compareTo(CorrelationId other) {
     return id - other.id;
   }
 
@@ -123,5 +123,3 @@ public class CorrelationId implements Cloneable, Comparable<CorrelationId> {
     return builder.build();
   }
 }
-
-// End CorrelationId.java

@@ -64,11 +64,11 @@ public class CollectNamespace extends AbstractNamespace {
 
   //~ Methods ----------------------------------------------------------------
 
-  protected RelDataType validateImpl(RelDataType targetRowType) {
+  @Override protected RelDataType validateImpl(RelDataType targetRowType) {
     return child.getOperator().deriveType(validator, scope, child);
   }
 
-  public SqlNode getNode() {
+  @Override public SqlNode getNode() {
     return child;
   }
 
@@ -76,5 +76,3 @@ public class CollectNamespace extends AbstractNamespace {
     return scope;
   }
 }
-
-// End CollectNamespace.java

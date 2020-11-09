@@ -212,10 +212,9 @@ public interface RelOptPlanner {
    */
   RelOptCost getCost(RelNode rel, RelMetadataQuery mq);
 
-  /**
-   * @deprecated Use {@link #getCost(RelNode, RelMetadataQuery)}
-   * or, better, call {@link RelMetadataQuery#getCumulativeCost(RelNode)}.
-   */
+  // CHECKSTYLE: IGNORE 2
+  /** @deprecated Use {@link #getCost(RelNode, RelMetadataQuery)}
+   * or, better, call {@link RelMetadataQuery#getCumulativeCost(RelNode)}. */
   @Deprecated // to be removed before 2.0
   RelOptCost getCost(RelNode rel);
 
@@ -297,18 +296,14 @@ public interface RelOptPlanner {
   long getRelMetadataTimestamp(RelNode rel);
 
   /**
-   * Sets the importance of a relational expression.
+   * Prunes a node from the planner.
    *
-   * <p>An important use of this method is when a {@link RelOptRule} has
-   * created a relational expression which is indisputably better than the
-   * original relational expression. The rule set the original relational
-   * expression's importance to zero, to reduce the search space. Pending rule
+   * <p>When a node is pruned, the related pending rule
    * calls are cancelled, and future rules will not fire.
-   *
-   * @param rel        Relational expression
-   * @param importance Importance
+   * This can be used to reduce the search space. </p>
+   * @param rel the node to prune.
    */
-  void setImportance(RelNode rel, double importance);
+  void prune(RelNode rel);
 
   /**
    * Registers a class of RelNode. If this class of RelNode has been seen
@@ -338,6 +333,7 @@ public interface RelOptPlanner {
   /** Called when a relational expression is copied to a similar expression. */
   void onCopy(RelNode rel, RelNode newRel);
 
+  // CHECKSTYLE: IGNORE 1
   /** @deprecated Use {@link RexExecutor} */
   @Deprecated // to be removed before 2.0
   interface Executor extends RexExecutor {
@@ -352,5 +348,3 @@ public interface RelOptPlanner {
     }
   }
 }
-
-// End RelOptPlanner.java

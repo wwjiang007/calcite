@@ -19,6 +19,7 @@ package org.apache.calcite.sql;
 import org.apache.calcite.plan.Context;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
+import org.apache.calcite.sql.fun.SqlBasicAggFunction;
 import org.apache.calcite.sql.type.SqlOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlOperandTypeInference;
 import org.apache.calcite.sql.type.SqlReturnTypeInference;
@@ -33,6 +34,8 @@ import javax.annotation.Nonnull;
 /**
  * Abstract base class for the definition of an aggregate function: an operator
  * which aggregates sets of values into a result.
+ *
+ * @see SqlBasicAggFunction
  */
 public abstract class SqlAggFunction extends SqlFunction implements Context {
   private final boolean requiresOrder;
@@ -103,7 +106,7 @@ public abstract class SqlAggFunction extends SqlFunction implements Context {
       boolean requiresOver,
       Optionality requiresGroupOrder) {
     super(name, sqlIdentifier, kind, returnTypeInference, operandTypeInference,
-        operandTypeChecker, null, funcType);
+        operandTypeChecker, funcType);
     this.requiresOrder = requiresOrder;
     this.requiresOver = requiresOver;
     this.requiresGroupOrder = Objects.requireNonNull(requiresGroupOrder);
@@ -111,7 +114,7 @@ public abstract class SqlAggFunction extends SqlFunction implements Context {
 
   //~ Methods ----------------------------------------------------------------
 
-  public <T> T unwrap(Class<T> clazz) {
+  @Override public <T> T unwrap(Class<T> clazz) {
     return clazz.isInstance(this) ? clazz.cast(this) : null;
   }
 
@@ -167,6 +170,22 @@ public abstract class SqlAggFunction extends SqlFunction implements Context {
     return requiresOver;
   }
 
+  /** Returns whether this aggregate function allows the {@code DISTINCT}
+   * keyword.
+   *
+   * <p>The default implementation returns {@link Optionality#OPTIONAL},
+   * which is appropriate for most aggregate functions, including {@code SUM}
+   * and {@code COUNT}.
+   *
+   * <p>Some aggregate functions, for example {@code MIN}, produce the same
+   * result with or without {@code DISTINCT}, and therefore return
+   * {@link Optionality#IGNORED} to indicate this. For such functions,
+   * Calcite will probably remove {@code DISTINCT} while optimizing the query.
+   */
+  public @Nonnull Optionality getDistinctOptionality() {
+    return Optionality.OPTIONAL;
+  }
+
   @Deprecated // to be removed before 2.0
   public List<RelDataType> getParameterTypes(RelDataTypeFactory typeFactory) {
     throw new UnsupportedOperationException("remove before calcite-2.0");
@@ -189,5 +208,3 @@ public abstract class SqlAggFunction extends SqlFunction implements Context {
     return false;
   }
 }
-
-// End SqlAggFunction.java

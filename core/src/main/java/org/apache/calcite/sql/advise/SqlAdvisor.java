@@ -79,19 +79,20 @@ public class SqlAdvisor {
   //~ Constructors -----------------------------------------------------------
 
   /**
-   * Creates a SqlAdvisor with a validator instance
+   * Creates a SqlAdvisor with a validator instance.
    *
    * @param validator Validator
    * @deprecated use {@link #SqlAdvisor(SqlValidatorWithHints, SqlParser.Config)}
    */
-  @Deprecated
+  @Deprecated // to be removed before 2.0
   public SqlAdvisor(
       SqlValidatorWithHints validator) {
     this(validator, SqlParser.Config.DEFAULT);
   }
 
   /**
-   * Creates a SqlAdvisor with a validator instance and given parser configuration
+   * Creates a SqlAdvisor with a validator instance and given parser
+   * configuration.
    *
    * @param validator Validator
    * @param parserConfig parser config
@@ -183,12 +184,12 @@ public class SqlAdvisor {
     }
 
     if (word.isEmpty()) {
-      return completionHints;
+      return ImmutableList.copyOf(completionHints);
     }
 
     // If cursor was part of the way through a word, only include hints
     // which start with that word in the result.
-    final List<SqlMoniker> result = new ArrayList<>();
+    final ImmutableList.Builder<SqlMoniker> result = new ImmutableList.Builder<>();
     Casing preferredCasing = getPreferredCasing(word);
 
     boolean ignoreCase = preferredCasing != Casing.UNCHANGED;
@@ -202,7 +203,7 @@ public class SqlAdvisor {
       }
     }
 
-    return result;
+    return result.build();
   }
 
   public List<SqlMoniker> getCompletionHints0(String sql, int cursor) {
@@ -306,8 +307,8 @@ public class SqlAdvisor {
   }
 
   /**
-   * Gets completion hints for a syntactically correct sql statement with dummy
-   * SqlIdentifier
+   * Gets completion hints for a syntactically correct SQL statement with dummy
+   * {@link SqlIdentifier}.
    *
    * @param sql A syntactically correct sql statement for which to retrieve
    *            completion hints
@@ -505,11 +506,12 @@ public class SqlAdvisor {
 
   /**
    * Turns a partially completed or syntactically incorrect sql statement into
-   * a simplified, valid one that can be passed into getCompletionHints()
+   * a simplified, valid one that can be passed into
+   * {@link #getCompletionHints(String, SqlParserPos)}.
    *
-   * @param sql    A partial or syntactically incorrect sql statement
-   * @param cursor to indicate column position in the query at which
-   *               completion hints need to be retrieved.
+   * @param sql    A partial or syntactically incorrect SQL statement
+   * @param cursor Indicates the position in the query at which
+   *               completion hints need to be retrieved
    * @return a completed, valid (and possibly simplified SQL statement
    */
   public String simplifySql(String sql, int cursor) {
@@ -518,7 +520,7 @@ public class SqlAdvisor {
   }
 
   /**
-   * Return an array of SQL reserved and keywords
+   * Returns an array of SQL reserved and keywords.
    *
    * @return an of SQL reserved and keywords
    */
@@ -604,11 +606,8 @@ public class SqlAdvisor {
 
   //~ Inner Classes ----------------------------------------------------------
 
-  /**
-   * An inner class that represents error message text and position info of a
-   * validator or parser exception
-   */
-  public class ValidateErrorInfo {
+  /** Text and position info of a validator or parser exception. */
+  public static class ValidateErrorInfo {
     private int startLineNum;
     private int startColumnNum;
     private int endLineNum;
@@ -669,41 +668,29 @@ public class SqlAdvisor {
       this.errorMsg = errorMsg;
     }
 
-    /**
-     * @return 1-based starting line number
-     */
+    /** Returns 1-based starting line number. */
     public int getStartLineNum() {
       return startLineNum;
     }
 
-    /**
-     * @return 1-based starting column number
-     */
+    /** Returns 1-based starting column number. */
     public int getStartColumnNum() {
       return startColumnNum;
     }
 
-    /**
-     * @return 1-based end line number
-     */
+    /** Returns 1-based end line number. */
     public int getEndLineNum() {
       return endLineNum;
     }
 
-    /**
-     * @return 1-based end column number
-     */
+    /** Returns 1-based end column number. */
     public int getEndColumnNum() {
       return endColumnNum;
     }
 
-    /**
-     * @return error message
-     */
+    /** Returns the error message. */
     public String getMessage() {
       return errorMsg;
     }
   }
 }
-
-// End SqlAdvisor.java

@@ -27,8 +27,8 @@ import java.util.List;
 /**
  * A character string literal.
  *
- * <p>Its {@link #value} field is an {@link NlsString} and {@link #typeName} is
- * {@link SqlTypeName#CHAR}.
+ * <p>Its {@link #value} field is an {@link NlsString} and
+ * {@link #getTypeName typeName} is {@link SqlTypeName#CHAR}.
  */
 public class SqlCharStringLiteral extends SqlAbstractStringLiteral {
 
@@ -41,44 +41,46 @@ public class SqlCharStringLiteral extends SqlAbstractStringLiteral {
   //~ Methods ----------------------------------------------------------------
 
   /**
-   * @return the underlying NlsString
+   * Returns the underlying NlsString.
+   *
+   * @deprecated Use {@link #getValueAs getValueAs(NlsString.class)}
    */
+  @Deprecated // to be removed before 2.0
   public NlsString getNlsString() {
     return (NlsString) value;
   }
 
   /**
-   * @return the collation
+   * Returns the collation.
    */
   public SqlCollation getCollation() {
-    return getNlsString().getCollation();
+    return ((NlsString) value).getCollation();
   }
 
   @Override public SqlCharStringLiteral clone(SqlParserPos pos) {
     return new SqlCharStringLiteral((NlsString) value, pos);
   }
 
-  public void unparse(
+  @Override public void unparse(
       SqlWriter writer,
       int leftPrec,
       int rightPrec) {
+    assert value instanceof NlsString;
+    final NlsString nlsString = (NlsString) this.value;
     if (false) {
       Util.discard(Bug.FRG78_FIXED);
-      String stringValue = ((NlsString) value).getValue();
+      String stringValue = nlsString.getValue();
       writer.literal(
           writer.getDialect().quoteStringLiteral(stringValue));
     }
-    assert value instanceof NlsString;
-    writer.literal(value.toString());
+    writer.literal(nlsString.asSql(true, true, writer.getDialect()));
   }
 
-  protected SqlAbstractStringLiteral concat1(List<SqlLiteral> literals) {
+  @Override protected SqlAbstractStringLiteral concat1(List<SqlLiteral> literals) {
     return new SqlCharStringLiteral(
         NlsString.concat(
             Util.transform(literals,
-                literal -> ((SqlCharStringLiteral) literal).getNlsString())),
+                literal -> literal.getValueAs(NlsString.class))),
         literals.get(0).getParserPosition());
   }
 }
-
-// End SqlCharStringLiteral.java

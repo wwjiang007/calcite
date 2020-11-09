@@ -16,7 +16,7 @@
  */
 package org.apache.calcite.linq4j;
 
-import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -29,9 +29,9 @@ import java.util.Objects;
 class GroupingImpl<K, V> extends AbstractEnumerable<V>
     implements Grouping<K, V>, Map.Entry<K, Enumerable<V>> {
   private final K key;
-  private final Collection<V> values;
+  private final List<V> values;
 
-  GroupingImpl(K key, Collection<V> values) {
+  GroupingImpl(K key, List<V> values) {
     this.key = Objects.requireNonNull(key);
     this.values = Objects.requireNonNull(values);
   }
@@ -55,25 +55,23 @@ class GroupingImpl<K, V> extends AbstractEnumerable<V>
   }
 
   // implement Map.Entry
-  public Enumerable<V> getValue() {
+  @Override public Enumerable<V> getValue() {
     return Linq4j.asEnumerable(values);
   }
 
   // implement Map.Entry
-  public Enumerable<V> setValue(Enumerable<V> value) {
+  @Override public Enumerable<V> setValue(Enumerable<V> value) {
     // immutable
     throw new UnsupportedOperationException();
   }
 
   // implement Map.Entry
   // implement Grouping
-  public K getKey() {
+  @Override public K getKey() {
     return key;
   }
 
-  public Enumerator<V> enumerator() {
+  @Override public Enumerator<V> enumerator() {
     return Linq4j.enumerator(values);
   }
 }
-
-// End GroupingImpl.java

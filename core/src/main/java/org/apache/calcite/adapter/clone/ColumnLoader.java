@@ -25,8 +25,7 @@ import org.apache.calcite.linq4j.tree.Primitive;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rel.type.RelProtoDataType;
-
-import com.google.common.collect.Lists;
+import org.apache.calcite.util.Util;
 
 import java.lang.reflect.Type;
 import java.sql.Date;
@@ -152,12 +151,12 @@ class ColumnLoader<T> {
         new AbstractList<Type>() {
           final List<RelDataTypeField> fields =
               elementType.getFieldList();
-          public Type get(int index) {
+          @Override public Type get(int index) {
             return typeFactory.getJavaClass(
                 fields.get(index).getType());
           }
 
-          public int size() {
+          @Override public int size() {
             return fields.size();
           }
         };
@@ -170,11 +169,11 @@ class ColumnLoader<T> {
               : new AbstractList<Object>() {
                 final int slice = pair.i;
 
-                public Object get(int index) {
+                @Override public Object get(int index) {
                   return ((Object[]) list.get(index))[slice];
                 }
 
-                public int size() {
+                @Override public int size() {
                   return list.size();
                 }
               };
@@ -238,27 +237,35 @@ class ColumnLoader<T> {
       switch (rep) {
       case OBJECT:
       case JAVA_SQL_TIMESTAMP:
-        return Lists.transform(list,
+        return Util.transform(list,
             (Timestamp t) -> t == null ? null : t.getTime());
+      default:
+        break;
       }
       break;
     case TIME:
       switch (rep) {
       case OBJECT:
       case JAVA_SQL_TIME:
-        return Lists.transform(list, (Time t) -> t == null
+        return Util.transform(list, (Time t) -> t == null
             ? null
             : (int) (t.getTime() % DateTimeUtils.MILLIS_PER_DAY));
+      default:
+        break;
       }
       break;
     case DATE:
       switch (rep) {
       case OBJECT:
       case JAVA_SQL_DATE:
-        return Lists.transform(list, (Date d) -> d == null
+        return Util.transform(list, (Date d) -> d == null
             ? null
             : (int) (d.getTime() / DateTimeUtils.MILLIS_PER_DAY));
+      default:
+        break;
       }
+      break;
+    default:
       break;
     }
     return list;
@@ -323,6 +330,8 @@ class ColumnLoader<T> {
         case OTHER:
         case VOID:
           throw new AssertionError("wtf?!");
+        default:
+          break;
         }
         if (canBeLong(min) && canBeLong(max)) {
           return chooseFixedRep(
@@ -416,6 +425,8 @@ class ColumnLoader<T> {
         case 64:
           return new ArrayTable.PrimitiveArray(
               ordinal, Primitive.LONG, p);
+        default:
+          break;
         }
       }
       return new ArrayTable.BitSlicedPrimitiveArray(
@@ -423,6 +434,7 @@ class ColumnLoader<T> {
     }
 
     /** Two's complement absolute on int value. */
+    @SuppressWarnings("unused")
     private static int abs2(int v) {
       // -128 becomes +127
       return v < 0 ? ~v : v;
@@ -445,11 +457,9 @@ class ColumnLoader<T> {
       this.key = key;
     }
 
-    public int compareTo(Kev o) {
+    @Override public int compareTo(Kev o) {
       //noinspection unchecked
       return key.compareTo(o.key);
     }
   }
 }
-
-// End ColumnLoader.java

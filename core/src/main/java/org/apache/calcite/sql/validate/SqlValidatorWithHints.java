@@ -24,8 +24,8 @@ import java.util.List;
 
 /**
  * Extends {@link SqlValidator} to allow discovery of useful data such as fully
- * qualified names of sql objects, alternative valid sql objects that can be
- * used in the SQL statement (dubbed as hints)
+ * qualified names of SQL objects, alternative valid SQL objects that can be
+ * used in the SQL statement (dubbed as hints).
  */
 public interface SqlValidatorWithHints extends SqlValidator {
   //~ Methods ----------------------------------------------------------------
@@ -64,5 +64,3 @@ public interface SqlValidatorWithHints extends SqlValidator {
    */
   SqlMoniker lookupQualifiedName(SqlNode topNode, SqlParserPos pos);
 }
-
-// End SqlValidatorWithHints.java

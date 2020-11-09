@@ -46,7 +46,7 @@ class SqlLatticeStatisticProvider implements LatticeStatisticProvider {
     this.lattice = Objects.requireNonNull(lattice);
   }
 
-  public double cardinality(List<Lattice.Column> columns) {
+  @Override public double cardinality(List<Lattice.Column> columns) {
     final List<Double> counts = new ArrayList<>();
     for (Lattice.Column column : columns) {
       counts.add(cardinality(lattice, column));
@@ -64,5 +64,3 @@ class SqlLatticeStatisticProvider implements LatticeStatisticProvider {
     return ((Number) values[0]).doubleValue();
   }
 }
-
-// End SqlLatticeStatisticProvider.java

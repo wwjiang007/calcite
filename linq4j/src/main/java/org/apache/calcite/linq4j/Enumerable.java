@@ -33,8 +33,6 @@ public interface Enumerable<T>
    *
    * @see EnumerableDefaults#asQueryable(Enumerable)
    */
-  Queryable<T> asQueryable();
+  @Override Queryable<T> asQueryable();
 
 }
-
-// End Enumerable.java

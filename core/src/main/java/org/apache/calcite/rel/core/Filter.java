@@ -29,14 +29,16 @@ import org.apache.calcite.rel.metadata.RelMdUtil;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rex.RexChecker;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexOver;
 import org.apache.calcite.rex.RexProgram;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.util.Litmus;
 
-import com.google.common.collect.ImmutableList;
+import org.apiguardian.api.API;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Relational expression that iterates over its input
@@ -95,11 +97,7 @@ public abstract class Filter extends SingleRel {
   public abstract Filter copy(RelTraitSet traitSet, RelNode input,
       RexNode condition);
 
-  @Override public List<RexNode> getChildExps() {
-    return ImmutableList.of(condition);
-  }
-
-  public RelNode accept(RexShuttle shuttle) {
+  @Override public RelNode accept(RexShuttle shuttle) {
     RexNode condition = shuttle.apply(this.condition);
     if (this.condition == condition) {
       return this;
@@ -109,6 +107,11 @@ public abstract class Filter extends SingleRel {
 
   public RexNode getCondition() {
     return condition;
+  }
+
+  /** Returns whether this Filter contains any windowed-aggregate functions. */
+  public final boolean containsOver() {
+    return RexOver.containsOver(condition);
   }
 
   @Override public boolean isValid(Litmus litmus, Context context) {
@@ -138,20 +141,38 @@ public abstract class Filter extends SingleRel {
 
   @Deprecated // to be removed before 2.0
   public static double estimateFilteredRows(RelNode child, RexProgram program) {
-    final RelMetadataQuery mq = RelMetadataQuery.instance();
+    final RelMetadataQuery mq = child.getCluster().getMetadataQuery();
     return RelMdUtil.estimateFilteredRows(child, program, mq);
   }
 
   @Deprecated // to be removed before 2.0
   public static double estimateFilteredRows(RelNode child, RexNode condition) {
-    final RelMetadataQuery mq = RelMetadataQuery.instance();
+    final RelMetadataQuery mq = child.getCluster().getMetadataQuery();
     return RelMdUtil.estimateFilteredRows(child, condition, mq);
   }
 
-  public RelWriter explainTerms(RelWriter pw) {
+  @Override public RelWriter explainTerms(RelWriter pw) {
     return super.explainTerms(pw)
         .item("condition", condition);
   }
-}
 
-// End Filter.java
+  @API(since = "1.24", status = API.Status.INTERNAL)
+  protected boolean deepEquals0(Object obj) {
+    if (this == obj) {
+      return true;
+    }
+    if (obj == null || getClass() != obj.getClass()) {
+      return false;
+    }
+    Filter o = (Filter) obj;
+    return traitSet.equals(o.traitSet)
+        && input.deepEquals(o.input)
+        && condition.equals(o.condition)
+        && getRowType().equalsSansFieldNames(o.getRowType());
+  }
+
+  @API(since = "1.24", status = API.Status.INTERNAL)
+  protected int deepHashCode0() {
+    return Objects.hash(traitSet, input.deepHashCode(), condition);
+  }
+}

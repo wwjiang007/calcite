@@ -19,11 +19,13 @@ package org.apache.calcite.util;
 import java.io.Serializable;
 import java.util.AbstractList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 import javax.annotation.Nonnull;
 
 /**
@@ -38,6 +40,11 @@ import javax.annotation.Nonnull;
  */
 public class Pair<T1, T2>
     implements Comparable<Pair<T1, T2>>, Map.Entry<T1, T2>, Serializable {
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private static final Comparator NULLS_FIRST_COMPARATOR =
+      Comparator.nullsFirst((Comparator) Comparator.naturalOrder());
+
   //~ Instance fields --------------------------------------------------------
 
   public final T1 left;
@@ -80,7 +87,7 @@ public class Pair<T1, T2>
 
   //~ Methods ----------------------------------------------------------------
 
-  public boolean equals(Object obj) {
+  @Override public boolean equals(Object obj) {
     return this == obj
         || (obj instanceof Pair)
         && Objects.equals(this.left, ((Pair) obj).left)
@@ -97,53 +104,30 @@ public class Pair<T1, T2>
     return keyHash ^ valueHash;
   }
 
-  public int compareTo(@Nonnull Pair<T1, T2> that) {
+  @Override public int compareTo(@Nonnull Pair<T1, T2> that) {
     //noinspection unchecked
-    int c = compare((Comparable) this.left, (Comparable) that.left);
+    int c = NULLS_FIRST_COMPARATOR.compare(this.left, that.left);
     if (c == 0) {
       //noinspection unchecked
-      c = compare((Comparable) this.right, (Comparable) that.right);
+      c = NULLS_FIRST_COMPARATOR.compare(this.right, that.right);
     }
     return c;
   }
 
-  public String toString() {
+  @Override public String toString() {
     return "<" + left + ", " + right + ">";
   }
 
-  public T1 getKey() {
+  @Override public T1 getKey() {
     return left;
   }
 
-  public T2 getValue() {
+  @Override public T2 getValue() {
     return right;
   }
 
-  public T2 setValue(T2 value) {
+  @Override public T2 setValue(T2 value) {
     throw new UnsupportedOperationException();
-  }
-
-  /**
-   * Compares a pair of comparable values of the same type. Null collates
-   * less than everything else, but equal to itself.
-   *
-   * @param c1 First value
-   * @param c2 Second value
-   * @return a negative integer, zero, or a positive integer if c1
-   * is less than, equal to, or greater than c2.
-   */
-  private static <C extends Comparable<C>> int compare(C c1, C c2) {
-    if (c1 == null) {
-      if (c2 == null) {
-        return 0;
-      } else {
-        return -1;
-      }
-    } else if (c2 == null) {
-      return 1;
-    } else {
-      return c1.compareTo(c2);
-    }
   }
 
   /**
@@ -205,15 +189,7 @@ public class Pair<T1, T2>
     } else {
       size = Math.min(ks.size(), vs.size());
     }
-    return new AbstractList<Pair<K, V>>() {
-      public Pair<K, V> get(int index) {
-        return Pair.of(ks.get(index), vs.get(index));
-      }
-
-      public int size() {
-        return size;
-      }
-    };
+    return new ZipList<>(ks, vs, size);
   }
 
   /**
@@ -252,14 +228,71 @@ public class Pair<T1, T2>
       final K[] ks,
       final V[] vs) {
     return new AbstractList<Pair<K, V>>() {
-      public Pair<K, V> get(int index) {
+      @Override public Pair<K, V> get(int index) {
         return Pair.of(ks[index], vs[index]);
       }
 
-      public int size() {
+      @Override public int size() {
         return Math.min(ks.length, vs.length);
       }
     };
+  }
+
+  /** Returns a mutable list of pairs backed by a pair of mutable lists.
+   *
+   * <p>Modifications to this list are reflected in the backing lists, and vice
+   * versa.
+   *
+   * @param <K> Key (left) value type
+   * @param <V> Value (right) value type */
+  public static <K, V> List<Pair<K, V>> zipMutable(
+      final List<K> ks,
+      final List<V> vs) {
+    return new MutableZipList<>(ks, vs);
+  }
+
+  /** Applies an action to every element of a pair of iterables.
+   *
+   * <p>Calls to the action stop whenever the first of the input iterators
+   * ends. But typically the source iterators will be the same length.
+   *
+   * @see Map#forEach(java.util.function.BiConsumer)
+   * @see org.apache.calcite.linq4j.Ord#forEach(Iterable, java.util.function.ObjIntConsumer)
+   *
+   * @param ks Left iterable
+   * @param vs Right iterable
+   * @param consumer The action to be performed for each element
+   *
+   * @param <K> Left type
+   * @param <V> Right type
+   */
+  public static <K, V> void forEach(
+      final Iterable<? extends K> ks,
+      final Iterable<? extends V> vs,
+      BiConsumer<K, V> consumer) {
+    final Iterator<? extends K> leftIterator = ks.iterator();
+    final Iterator<? extends V> rightIterator = vs.iterator();
+    while (leftIterator.hasNext() && rightIterator.hasNext()) {
+      consumer.accept(leftIterator.next(), rightIterator.next());
+    }
+  }
+
+  /** Applies an action to every element of an iterable of pairs.
+   *
+   * @see Map#forEach(java.util.function.BiConsumer)
+   *
+   * @param entries Pairs
+   * @param consumer The action to be performed for each element
+   *
+   * @param <K> Left type
+   * @param <V> Right type
+   */
+  public static <K, V> void forEach(
+      final Iterable<? extends Map.Entry<? extends K, ? extends V>> entries,
+      BiConsumer<K, V> consumer) {
+    for (Map.Entry<? extends K, ? extends V> entry : entries) {
+      consumer.accept(entry.getKey(), entry.getValue());
+    }
   }
 
   /**
@@ -271,8 +304,8 @@ public class Pair<T1, T2>
    * @return Iterable over the left elements
    */
   public static <L, R> Iterable<L> left(
-      final Iterable<? extends Map.Entry<L, R>> iterable) {
-    return () -> new LeftIterator<>(iterable.iterator());
+      final Iterable<? extends Map.Entry<? extends L, ? extends R>> iterable) {
+    return Util.transform(iterable, Map.Entry::getKey);
   }
 
   /**
@@ -284,34 +317,18 @@ public class Pair<T1, T2>
    * @return Iterable over the right elements
    */
   public static <L, R> Iterable<R> right(
-      final Iterable<? extends Map.Entry<L, R>> iterable) {
-    return () -> new RightIterator<>(iterable.iterator());
+      final Iterable<? extends Map.Entry<? extends L, ? extends R>> iterable) {
+    return Util.transform(iterable, Map.Entry::getValue);
   }
 
   public static <K, V> List<K> left(
-      final List<? extends Map.Entry<K, V>> pairs) {
-    return new AbstractList<K>() {
-      public K get(int index) {
-        return pairs.get(index).getKey();
-      }
-
-      public int size() {
-        return pairs.size();
-      }
-    };
+      final List<? extends Map.Entry<? extends K, ? extends V>> pairs) {
+    return Util.transform(pairs, Map.Entry::getKey);
   }
 
   public static <K, V> List<V> right(
-      final List<? extends Map.Entry<K, V>> pairs) {
-    return new AbstractList<V>() {
-      public V get(int index) {
-        return pairs.get(index).getValue();
-      }
-
-      public int size() {
-        return pairs.size();
-      }
-    };
+      final List<? extends Map.Entry<? extends K, ? extends V>> pairs) {
+    return Util.transform(pairs, Map.Entry::getValue);
   }
 
   /**
@@ -354,54 +371,6 @@ public class Pair<T1, T2>
     };
   }
 
-  /** Iterator that returns the left field of each pair.
-   *
-   * @param <L> Left-hand type
-   * @param <R> Right-hand type */
-  private static class LeftIterator<L, R> implements Iterator<L> {
-    private final Iterator<? extends Map.Entry<L, R>> iterator;
-
-    LeftIterator(Iterator<? extends Map.Entry<L, R>> iterator) {
-      this.iterator = Objects.requireNonNull(iterator);
-    }
-
-    public boolean hasNext() {
-      return iterator.hasNext();
-    }
-
-    public L next() {
-      return iterator.next().getKey();
-    }
-
-    public void remove() {
-      iterator.remove();
-    }
-  }
-
-  /** Iterator that returns the right field of each pair.
-   *
-   * @param <L> Left-hand type
-   * @param <R> Right-hand type */
-  private static class RightIterator<L, R> implements Iterator<R> {
-    private final Iterator<? extends Map.Entry<L, R>> iterator;
-
-    RightIterator(Iterator<? extends Map.Entry<L, R>> iterator) {
-      this.iterator = Objects.requireNonNull(iterator);
-    }
-
-    public boolean hasNext() {
-      return iterator.hasNext();
-    }
-
-    public R next() {
-      return iterator.next().getValue();
-    }
-
-    public void remove() {
-      iterator.remove();
-    }
-  }
-
   /** Iterator that returns the first element of a collection paired with every
    * other element.
    *
@@ -415,15 +384,15 @@ public class Pair<T1, T2>
       this.first = first;
     }
 
-    public boolean hasNext() {
+    @Override public boolean hasNext() {
       return iterator.hasNext();
     }
 
-    public Pair<E, E> next() {
+    @Override public Pair<E, E> next() {
       return of(first, iterator.next());
     }
 
-    public void remove() {
+    @Override public void remove() {
       throw new UnsupportedOperationException("remove");
     }
   }
@@ -442,15 +411,15 @@ public class Pair<T1, T2>
       this.rightIterator = Objects.requireNonNull(rightIterator);
     }
 
-    public boolean hasNext() {
+    @Override public boolean hasNext() {
       return leftIterator.hasNext() && rightIterator.hasNext();
     }
 
-    public Pair<L, R> next() {
+    @Override public Pair<L, R> next() {
       return Pair.of(leftIterator.next(), rightIterator.next());
     }
 
-    public void remove() {
+    @Override public void remove() {
       leftIterator.remove();
       rightIterator.remove();
     }
@@ -471,21 +440,92 @@ public class Pair<T1, T2>
       previous = first;
     }
 
-    public boolean hasNext() {
+    @Override public boolean hasNext() {
       return iterator.hasNext();
     }
 
-    public Pair<E, E> next() {
+    @Override public Pair<E, E> next() {
       final E current = iterator.next();
       final Pair<E, E> pair = of(previous, current);
       previous = current;
       return pair;
     }
 
-    public void remove() {
+    @Override public void remove() {
       throw new UnsupportedOperationException("remove");
     }
   }
-}
 
-// End Pair.java
+  /** Unmodifiable list of pairs, backed by a pair of lists.
+   *
+   * <p>Though it is unmodifiable, it is mutable: if the contents of one
+   * of the backing lists changes, the contents of this list will appear to
+   * change. The length, however, is fixed on creation.
+   *
+   * @param <K> Left-hand type
+   * @param <V> Right-hand type
+   *
+   * @see MutableZipList */
+  private static class ZipList<K, V> extends AbstractList<Pair<K, V>> {
+    private final List<K> ks;
+    private final List<V> vs;
+    private final int size;
+
+    ZipList(List<K> ks, List<V> vs, int size) {
+      this.ks = ks;
+      this.vs = vs;
+      this.size = size;
+    }
+
+    @Override public Pair<K, V> get(int index) {
+      return Pair.of(ks.get(index), vs.get(index));
+    }
+
+    @Override public int size() {
+      return size;
+    }
+  }
+
+  /** A mutable list of pairs backed by a pair of mutable lists.
+   *
+   * <p>Modifications to this list are reflected in the backing lists, and vice
+   * versa.
+   *
+   * @param <K> Key (left) value type
+   * @param <V> Value (right) value type */
+  private static class MutableZipList<K, V> extends AbstractList<Pair<K, V>> {
+    private final List<K> ks;
+    private final List<V> vs;
+
+    MutableZipList(List<K> ks, List<V> vs) {
+      this.ks = Objects.requireNonNull(ks);
+      this.vs = Objects.requireNonNull(vs);
+    }
+
+    @Override public Pair<K, V> get(int index) {
+      return Pair.of(ks.get(index), vs.get(index));
+    }
+
+    @Override public int size() {
+      return Math.min(ks.size(), vs.size());
+    }
+
+    @Override public void add(int index, Pair<K, V> pair) {
+      ks.add(index, pair.left);
+      vs.add(index, pair.right);
+    }
+
+    @Override public Pair<K, V> remove(int index) {
+      final K bufferedRow = ks.remove(index);
+      final V stateSet = vs.remove(index);
+      return Pair.of(bufferedRow, stateSet);
+    }
+
+    @Override public Pair<K, V> set(int index, Pair<K, V> pair) {
+      final Pair<K, V> previous = get(index);
+      ks.set(index, pair.left);
+      vs.set(index, pair.right);
+      return previous;
+    }
+  }
+}

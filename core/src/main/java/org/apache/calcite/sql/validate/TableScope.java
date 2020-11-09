@@ -46,7 +46,7 @@ class TableScope extends ListScope {
 
   //~ Methods ----------------------------------------------------------------
 
-  public SqlNode getNode() {
+  @Override public SqlNode getNode() {
     return node;
   }
 
@@ -58,5 +58,3 @@ class TableScope extends ListScope {
     return s.isWithin(scope2);
   }
 }
-
-// End TableScope.java

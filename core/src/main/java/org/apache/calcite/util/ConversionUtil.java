@@ -23,7 +23,7 @@ import java.util.Locale;
 import static org.apache.calcite.util.Static.RESOURCE;
 
 /**
- * Utility functions for converting from one type to another
+ * Utility functions for converting from one type to another.
  */
 public class ConversionUtil {
   private ConversionUtil() {}
@@ -116,7 +116,7 @@ public class ConversionUtil {
   }
 
   /**
-   * Converts a string into a boolean
+   * Converts a string into a BOOLEAN.
    */
   public static Boolean toBoolean(String str) {
     if (str == null) {
@@ -134,5 +134,3 @@ public class ConversionUtil {
     }
   }
 }
-
-// End ConversionUtil.java

@@ -40,7 +40,7 @@ public abstract class SqlTypeTransforms {
   /**
    * Parameter type-inference transform strategy where a derived type is
    * transformed into the same type but nullable if any of a calls operands is
-   * nullable
+   * nullable.
    */
   public static final SqlTypeTransform TO_NULLABLE =
       (opBinding, typeToTransform) ->
@@ -100,13 +100,15 @@ public abstract class SqlTypeTransforms {
    */
   public static final SqlTypeTransform TO_VARYING =
       new SqlTypeTransform() {
-        public RelDataType transformType(
+        @Override public RelDataType transformType(
             SqlOperatorBinding opBinding,
             RelDataType typeToTransform) {
           switch (typeToTransform.getSqlTypeName()) {
           case VARCHAR:
           case VARBINARY:
             return typeToTransform;
+          default:
+            break;
           }
 
           SqlTypeName retTypeName = toVar(typeToTransform);
@@ -137,6 +139,8 @@ public abstract class SqlTypeTransforms {
             return SqlTypeName.VARBINARY;
           case ANY:
             return SqlTypeName.ANY;
+          case NULL:
+            return SqlTypeName.NULL;
           default:
             throw Util.unexpected(sqlTypeName);
           }
@@ -163,6 +167,16 @@ public abstract class SqlTypeTransforms {
           opBinding.getTypeFactory().createMultisetType(typeToTransform, -1);
 
   /**
+   * Parameter type-inference transform strategy that wraps a given type
+   * in a array.
+   *
+   * @see org.apache.calcite.rel.type.RelDataTypeFactory#createArrayType(RelDataType, long)
+   */
+  public static final SqlTypeTransform TO_ARRAY =
+      (opBinding, typeToTransform) ->
+          opBinding.getTypeFactory().createArrayType(typeToTransform, -1);
+
+  /**
    * Parameter type-inference transform strategy where a derived type must be
    * a struct type with precisely one field and the returned type is the type
    * of that field.
@@ -174,5 +188,3 @@ public abstract class SqlTypeTransforms {
         return fields.get(0).getType();
       };
 }
-
-// End SqlTypeTransforms.java
